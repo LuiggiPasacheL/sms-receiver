@@ -24,6 +24,8 @@ type Config struct {
 
 type Server struct {
 	Store   Repository
+	Admins  AdminRepository
+	Access  *CloudflareAccess
 	Events  *Events
 	Config  Config
 	Logger  *slog.Logger
@@ -40,8 +42,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/messages", s.requireViewer(s.list))
 	mux.HandleFunc("GET /api/conversations", s.requireViewer(s.list))
 	mux.HandleFunc("GET /api/sims", s.requireViewer(s.listSIMs))
-	mux.HandleFunc("PUT /api/sims", s.requireViewer(s.setSIMAlias))
-	mux.HandleFunc("DELETE /api/sims", s.requireViewer(s.deleteSIM))
+	mux.HandleFunc("PUT /api/sims", s.requireAdmin(s.setSIMAlias, true))
+	mux.HandleFunc("DELETE /api/sims", s.requireAdmin(s.deleteSIM, true))
+	mux.HandleFunc("GET /api/admins", s.requireAdmin(s.listAdmins, false))
+	mux.HandleFunc("PUT /api/admins", s.requireAdmin(s.addAdmin, false))
 	mux.HandleFunc("GET /api/events", s.requireViewer(s.stream))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeError(w, 404, "Not found") })
 	if s.Config.StaticDir != "" {

@@ -72,7 +72,26 @@ Open **Manage SIMs** beside the SIM filter. Assign a display alias such as “Pe
 
 **Delete SIM** opens a confirmation showing the SIM identifier and message count. Confirming permanently deletes every message for that SIM across all conversations and removes its alias in one transaction. Messages from other SIMs remain intact, including those in shared conversations. This does not block future forwarding: a new message with the same SIM identifier makes it appear again without an alias. Messages without a SIM identifier do not appear in the SIM manager.
 
-SIM management uses the same viewer session as the inbox; with no `VIEWER_PASSWORD`, anyone who can access the app can manage SIMs. Changes propagate to other open inboxes through SSE, and a deleted SIM filter resets to All SIMs.
+In Cloudflare Access mode, only administrators can change aliases or delete SIMs. In local password mode, SIM management uses the inbox session. Changes propagate to other open inboxes through SSE, and a deleted SIM filter resets to All SIMs.
+
+## Cloudflare Access and administrators
+
+Set `CLOUDFLARE_ACCESS_TEAM_URL` to `https://YOUR_TEAM.cloudflareaccess.com` and `CLOUDFLARE_ACCESS_AUD` to the Application Audience (AUD) tag of the existing Access application. Set both values in the environment and keep `FORWARDER_TOKEN` configured. For k3s, put these keys in `sms-receiver-secrets` and apply the updated `k8s/app.yaml`. The origin needs HTTPS access to your team domain to retrieve signing keys. See [Cloudflare's JWT validation guide](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/).
+
+Users admitted by the Cloudflare Access policy can read the inbox. The server verifies the signature, issuer, audience and expiration of the application JWT. It uses the email from the verified user token to look up administrator privileges. API clients can supply the same kind of JWT via `Authorization: Bearer …` when the Cloudflare assertion header is absent. The shared inbox password is disabled in Cloudflare Access mode.
+
+Bootstrap the first administrator from an operator shell with access to the deployed container. Use the email address that the operator uses to sign in through Cloudflare:
+
+```sh
+kubectl -n sms-receiver exec deploy/sms-receiver -- /app/sms-receiver admin add owner@example.com
+kubectl -n sms-receiver exec deploy/sms-receiver -- /app/sms-receiver admin list
+```
+
+For Compose, use `docker compose exec app /app/sms-receiver admin add owner@example.com`. From the Go checkout in `backend`, run `go run ./cmd/server admin add owner@example.com` with `DATABASE_URL` set. Repeating the same address is safe. The administrator list is stored in PostgreSQL and shared by all app replicas.
+
+After signing in through Cloudflare, open **Administrators** in the top bar to add more email addresses. Added users must also be allowed by your Cloudflare Access policy. Adding an address in Relay grants app permissions only. Reload the inbox after a role is granted to reveal the administrator controls. Administrators can add emails and use **Manage SIMs** to edit aliases or delete SIMs and their stored messages.
+
+Keep `/messages` reachable by SMS Forwarder using its current Cloudflare routing or service policy and `X-Forwarder-Token`. The browser paths, including `/api/*`, should share the Access application and AUD. Turn off origin caching for authenticated API responses.
 
 ## Live updates
 
@@ -128,7 +147,9 @@ Open **http://localhost:3000**. During development, Next.js proxies `/api/*` and
 | `DATABASE_URL` | PostgreSQL connection string; use TLS for remote databases | Required |
 | `HTTP_ADDR` | Go listen address | `:8080` |
 | `STATIC_DIR` | Exported frontend directory | `../frontend/out` (run from `backend`) |
-| `VIEWER_PASSWORD` | Inbox password; signs seven-day HttpOnly, SameSite=Strict session cookies | Empty: public inbox |
+| `VIEWER_PASSWORD` | Password for legacy inbox access without Cloudflare | Empty: public inbox when Cloudflare Access is disabled |
+| `CLOUDFLARE_ACCESS_TEAM_URL` | HTTPS URL for the Cloudflare Access team | Empty |
+| `CLOUDFLARE_ACCESS_AUD` | Audience tag for the Cloudflare Access app | Empty |
 | `FORWARDER_TOKEN` | Required `X-Forwarder-Token` header on ingestion | Empty: unauthenticated ingestion |
 | `COOKIE_SECURE` | Use Secure session cookies for HTTPS | `false` |
 | `APP_PORT` | Compose's exposed app port | `8080` |
@@ -148,7 +169,9 @@ Compose requires all three secrets. The frontend assets are public; all inbox da
 | `PUT /api/sims` | Set/clear alias with `{"sim":"SIM 1","alias":"Personal"}`; `204` on success, `404` for an unknown SIM |
 | `DELETE /api/sims?sim=` | Permanently remove the exact SIM and all its messages; returns `deletedMessages`, or `404` if unknown |
 | `GET /api/events` | Authenticated SSE; `ready` and `messages` events |
-| `GET /api/session` | Session status |
+| `GET /api/session` | Session status, including the verified email and administrator status in Cloudflare Access mode |
+| `GET /api/admins` | List administrator emails, available to Cloudflare administrators |
+| `PUT /api/admins` | Grant administrator access with `{"email":"owner@example.com"}` |
 | `POST /api/session` | Sign in with `{"password":"..."}` |
 | `DELETE /api/session` | Sign out |
 | `GET /healthz` | Database readiness check |

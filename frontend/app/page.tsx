@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDown, ArrowLeft, ArrowUpRight, Check, CheckCheck, ChevronDown, Copy, Inbox, LockKeyhole, LogOut, MessageSquare, Radio, RefreshCw, Search, ShieldCheck, Signal, Smartphone, Settings2, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUpRight, Check, CheckCheck, ChevronDown, Copy, Inbox, LockKeyhole, LogOut, MessageSquare, Radio, RefreshCw, Search, ShieldCheck, Signal, Smartphone, Settings2, Users, X } from "lucide-react";
 
 import { APIError, request } from "./api";
+import { AdminManager } from "./admin-manager";
 import { SIMManager, simLabel, type SIM } from "./sim-manager";
 import { findVerificationCode } from "./verification-code";
 
@@ -19,7 +20,7 @@ type Message = {
 type Conversation = { latestMessage: Message; messageCount: number };
 type ConversationPage = { conversations: Conversation[]; nextCursor?: string; total: number; messageTotal: number; today: number; sims: string[] };
 type Page = { messages: Message[]; nextCursor?: string; total: number; today: number; sims: string[] };
-type Session = { authenticated: boolean; passwordRequired: boolean };
+type Session = { authenticated: boolean; passwordRequired?: boolean; provider?: "cloudflare"; email?: string; admin?: boolean };
 type Connection = "connecting" | "live" | "reconnecting";
 
 const number = (n: number) => new Intl.NumberFormat().format(n);
@@ -206,6 +207,7 @@ export default function Home() {
   const [sim, setSim] = useState("");
   const [sims, setSIMs] = useState<SIM[]>([]);
   const [managingSIMs, setManagingSIMs] = useState(false);
+  const [managingAdmins, setManagingAdmins] = useState(false);
   const [pageCount, setPageCount] = useState(1);
   const [revision, setRevision] = useState(0);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -249,6 +251,11 @@ export default function Home() {
   }, [search]);
 
   const authenticated = session?.authenticated;
+  const sessionExpired = useCallback(() => {
+    setSession((current) => current ? { ...current, authenticated: false, email: undefined, admin: false } : current);
+    setManagingAdmins(false);
+    setManagingSIMs(false);
+  }, []);
   useEffect(() => {
     if (!authenticated) return;
     setConversations([]);
@@ -284,14 +291,14 @@ export default function Home() {
         setLastSync(new Date());
       } catch (e) {
         if (controller.signal.aborted) return;
-        if (e instanceof APIError && e.status === 401) setSession({ authenticated: false, passwordRequired: true });
+        if (e instanceof APIError && e.status === 401) sessionExpired();
         else setError(e instanceof Error ? e.message : "Could not load messages");
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
     })();
     return () => controller.abort();
-  }, [authenticated, term, sim, pageCount, revision]);
+  }, [authenticated, term, sim, pageCount, revision, sessionExpired]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -321,8 +328,6 @@ export default function Home() {
       refreshTimer.current = null;
     };
   }, [authenticated]);
-
-  const sessionExpired = useCallback(() => setSession({ authenticated: false, passwordRequired: true }), []);
 
   const loadSIMs = useCallback(async (signal?: AbortSignal) => {
     const result = await request<{ sims: SIM[] }>("/api/sims", { signal });
@@ -386,7 +391,8 @@ export default function Home() {
         <span className="eyebrow">A QUIET PLACE FOR YOUR MESSAGES</span>
         <h1>Welcome to your inbox.</h1>
         <p>Your phone receives it. Relay keeps it in view.</p>
-        {!session ? <div className="session-loading" role="status">{sessionError ? <><span>{sessionError}</span><button onClick={checkSession} className="primary-button">Try again</button></> : <><RefreshCw size={17} className="spin" /> Connecting to your inbox…</>}</div> :
+        {!session ? <div className="session-loading" role="status">{sessionError ? <><span>{sessionError}</span><button onClick={checkSession} className="primary-button">Try again</button></> : <><RefreshCw size={17} className="spin" /> Connecting to your inbox…</>}</div> : session.provider === "cloudflare" ?
+          <div className="session-loading"><p>Sign in through the Cloudflare Access address for this inbox.</p><button onClick={() => window.location.reload()} className="primary-button">Reload inbox</button></div> :
           <form onSubmit={login}>
             <label htmlFor="password">Inbox password</label>
             <input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoFocus />
@@ -415,11 +421,11 @@ export default function Home() {
       </aside>
 
       <main className="workspace">
-        <header className="topbar"><div className="breadcrumb"><span>Workspace</span><span>/</span><strong>Inbox</strong></div><div className="topbar-actions"><div className={`connection-pill ${connection !== "live" ? "is-reconnecting" : ""}`} role="status"><span className="status-dot" />{connection === "live" ? "Live updates on" : connection === "connecting" ? "Connecting…" : "Reconnecting…"}</div>{session.passwordRequired && <button className="mobile-sign-out icon-button" aria-label="Sign out" onClick={logout}><LogOut size={14} /></button>}</div></header>
+        <header className="topbar"><div className="breadcrumb"><span>Workspace</span><span>/</span><strong>Inbox</strong></div><div className="topbar-actions"><div className={`connection-pill ${connection !== "live" ? "is-reconnecting" : ""}`} role="status"><span className="status-dot" />{connection === "live" ? "Live updates on" : connection === "connecting" ? "Connecting…" : "Reconnecting…"}</div>{session.admin && <button className="icon-button manage-sims-button" aria-label="Manage administrators" onClick={() => setManagingAdmins(true)}><Users size={16} /><span>Administrators</span></button>}{session.passwordRequired && <button className="mobile-sign-out icon-button" aria-label="Sign out" onClick={logout}><LogOut size={14} /></button>}</div></header>
         <div className="page-heading"><div><div className="eyebrow heading-eyebrow">YOUR MESSAGES, TOGETHER</div><h1>Inbox<span className="heading-dot">.</span></h1><p>A little less checking your phone.</p></div><div className="heading-note"><Signal size={18} /><div><strong>Always in the loop</strong><span>New messages arrive in real time</span></div></div></div>
 
         <section className="inbox-panel" aria-label="SMS messages">
-          <div className="inbox-toolbar"><div className="inbox-title"><Inbox size={17} /><strong>Conversations</strong><span className="count-badge">{number(stats.conversations)}</span></div><div className="toolbar-controls"><label className="sim-select"><Smartphone size={14} /><select aria-label="Filter by SIM" value={sim} onChange={(e) => { setSim(e.target.value); setPageCount(1); }}><option value="">All SIMs</option>{sims.map((value) => <option key={value.id} value={value.id}>{value.alias ? `${value.alias} (${value.id})` : value.id}</option>)}</select><ChevronDown size={13} /></label><button className="icon-button manage-sims-button" aria-label="Manage SIMs" onClick={() => setManagingSIMs(true)}><Settings2 size={15} /><span>Manage SIMs</span></button><button className={`icon-button ${loading ? "is-loading" : ""}`} aria-label="Refresh inbox" onClick={() => setRevision((r) => r + 1)} disabled={loading}><RefreshCw size={15} className={loading ? "spin" : ""} /></button></div></div>
+          <div className="inbox-toolbar"><div className="inbox-title"><Inbox size={17} /><strong>Conversations</strong><span className="count-badge">{number(stats.conversations)}</span></div><div className="toolbar-controls"><label className="sim-select"><Smartphone size={14} /><select aria-label="Filter by SIM" value={sim} onChange={(e) => { setSim(e.target.value); setPageCount(1); }}><option value="">All SIMs</option>{sims.map((value) => <option key={value.id} value={value.id}>{value.alias ? `${value.alias} (${value.id})` : value.id}</option>)}</select><ChevronDown size={13} /></label>{(session.provider !== "cloudflare" || session.admin) && <button className="icon-button manage-sims-button" aria-label="Manage SIMs" onClick={() => setManagingSIMs(true)}><Settings2 size={15} /><span>Manage SIMs</span></button>}<button className={`icon-button ${loading ? "is-loading" : ""}`} aria-label="Refresh inbox" onClick={() => setRevision((r) => r + 1)} disabled={loading}><RefreshCw size={15} className={loading ? "spin" : ""} /></button></div></div>
           {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setRevision((r) => r + 1)}>Retry</button></div>}
           <div className={`inbox-columns ${mobileDetail ? "detail-open" : ""}`}>
             <div className="message-list-pane">
@@ -441,6 +447,7 @@ export default function Home() {
         <footer className="workspace-footer"><span><ShieldCheck size={12} /> Your messages. Just for you.</span><span aria-live="polite">{lastSync ? `Last synced ${lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for first sync"}<span className="footer-dot">·</span>Auto-updating</span></footer>
       </main>
       {managingSIMs && <SIMManager sims={sims} onClose={() => setManagingSIMs(false)} onChanged={simsChanged} onUnauthorized={sessionExpired} />}
+      {managingAdmins && session.admin && session.email && <AdminManager currentEmail={session.email} onClose={() => setManagingAdmins(false)} onUnauthorized={sessionExpired} />}
     </div>
   );
 }

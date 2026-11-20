@@ -56,6 +56,8 @@ sudo k3s kubectl -n sms-receiver get pods,services
 
 The configured PostgreSQL server must be available before the app can start. If NetworkPolicies restrict traffic, allow the application to reach its database host and port.
 
+If you publish the inbox behind Cloudflare Access, see [Cloudflare authentication and administrator setup](../README.md#cloudflare-access-and-administrators) for the two additional Secret keys and the CLI bootstrap command.
+
 ## 4. Open the app
 
 Allow inbound **TCP `30080`** in the server firewall and any cloud firewall/security group for the clients that need access. Then use:

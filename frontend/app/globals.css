@@ -202,6 +202,11 @@ svg { flex-shrink: 0; }
   font-weight: 600;
 }
 .verification-code-button:hover { background: #dae9d4; }
+.admin-email-list { margin: 0; list-style: none; padding: 0; }
+.admin-email-list li { padding: 10px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.admin-email-list li span, .admin-status { color: #527055; }
+.admin-status { margin: 0; overflow-wrap: anywhere; }
+.admin-status:not(:empty) { margin-top: 10px; }
 .chat-bubble-footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; color: #89977d; font-size: 10px; }
 .chat-bubble-footer .sim-badge { margin-right: auto; }
 .chat-metadata { margin-top: 8px; border-top: 1px solid #e3e9da; color: #87957b; font-size: 10px; }

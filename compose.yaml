@@ -8,6 +8,8 @@ services:
       VIEWER_PASSWORD: ${VIEWER_PASSWORD:?Set VIEWER_PASSWORD in .env}
       FORWARDER_TOKEN: ${FORWARDER_TOKEN:?Set FORWARDER_TOKEN in .env}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CLOUDFLARE_ACCESS_TEAM_URL: ${CLOUDFLARE_ACCESS_TEAM_URL:-}
+      CLOUDFLARE_ACCESS_AUD: ${CLOUDFLARE_ACCESS_AUD:-}
     depends_on:
       db:
         condition: service_healthy

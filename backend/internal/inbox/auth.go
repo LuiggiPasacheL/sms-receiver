@@ -25,6 +25,9 @@ func (s *Server) signature(value string) string {
 }
 
 func (s *Server) authorized(r *http.Request) bool {
+	if s.Access != nil {
+		return s.Access.email(r) != ""
+	}
 	if s.Config.ViewerPassword == "" {
 		return true
 	}
@@ -51,10 +54,33 @@ func (s *Server) requireViewer(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
+	if s.Access != nil {
+		status := struct {
+			Authenticated bool   `json:"authenticated"`
+			Provider      string `json:"provider"`
+			Email         string `json:"email,omitempty"`
+			Admin         bool   `json:"admin"`
+		}{Provider: "cloudflare", Email: s.Access.email(r)}
+		if status.Email != "" {
+			status.Authenticated = true
+			admin, err := s.checkAdmin(r, status.Email)
+			if err != nil {
+				s.adminError(w, err)
+				return
+			}
+			status.Admin = admin
+		}
+		writeJSON(w, http.StatusOK, status)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"authenticated": s.authorized(r), "passwordRequired": s.Config.ViewerPassword != ""})
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	if s.Access != nil {
+		writeError(w, http.StatusForbidden, "Sign in through Cloudflare Access")
+		return
+	}
 	var body struct {
 		Password string `json:"password"`
 	}
@@ -73,6 +99,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if s.Access != nil {
+		writeError(w, http.StatusForbidden, "Sign out through Cloudflare Access")
+		return
+	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.Config.CookieSecure, SameSite: http.SameSiteStrictMode})
 	w.WriteHeader(http.StatusNoContent)
 }

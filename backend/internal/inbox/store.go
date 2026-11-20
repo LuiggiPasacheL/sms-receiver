@@ -17,6 +17,9 @@ var schema string
 //go:embed migrations/002_sim_aliases.sql
 var simSchema string
 
+//go:embed migrations/003_admin_emails.sql
+var adminsSchema string
+
 var ErrSIMNotFound = errors.New("SIM not found")
 
 type Repository interface {
@@ -44,6 +47,9 @@ func (s Store) Migrate(ctx context.Context) error {
 		return err
 	}
 	if _, err = tx.Exec(ctx, simSchema); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, adminsSchema); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
