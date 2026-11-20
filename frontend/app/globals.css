@@ -187,6 +187,21 @@ svg { flex-shrink: 0; }
 .chat-date span { border: 1px solid #e8eddf; background: #f4f7ef; padding: 6px 12px; border-radius: 20px; }
 .chat-bubble { max-width: 90%; width: fit-content; min-width: min(230px, 100%); padding: 14px 16px 10px; border: 1px solid #e3e9da; border-radius: 3px 16px 16px; background: #f0f5e9; }
 .chat-bubble .message-body { margin: 0 0 12px; line-height: 1.7; }
+.verification-code-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  margin-bottom: 8px;
+  padding: 0 12px;
+  border: 1px solid #cbdcc7;
+  border-radius: 7px;
+  background: #e4efdf;
+  color: #2f5a40;
+  font-size: 13px;
+  font-weight: 600;
+}
+.verification-code-button:hover { background: #dae9d4; }
 .chat-bubble-footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; color: #89977d; font-size: 10px; }
 .chat-bubble-footer .sim-badge { margin-right: auto; }
 .chat-metadata { margin-top: 8px; border-top: 1px solid #e3e9da; color: #87957b; font-size: 10px; }

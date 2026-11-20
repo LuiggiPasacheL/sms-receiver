@@ -5,6 +5,7 @@ import { ArrowDown, ArrowLeft, ArrowUpRight, Check, CheckCheck, ChevronDown, Cop
 
 import { APIError, request } from "./api";
 import { SIMManager, simLabel, type SIM } from "./sim-manager";
+import { findVerificationCode } from "./verification-code";
 
 type Message = {
   id: string;
@@ -48,6 +49,30 @@ function Brand() {
   return <div className="brand"><span className="brand-mark"><MessageSquare size={22} strokeWidth={1.7} /></span><span>relay<span className="brand-dot">.</span></span></div>;
 }
 
+function copyWithSelection(text: string) {
+  // Clipboard.writeText is unavailable on HTTP, including LAN deployments.
+  const focused = document.activeElement;
+  const selection = document.getSelection();
+  const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index)) : [];
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.readOnly = true;
+  field.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none;font-size:16px";
+  document.body.append(field);
+  try {
+    field.focus({ preventScroll: true });
+    field.select();
+    if (!document.execCommand("copy")) throw new Error("Clipboard unavailable");
+  } finally {
+    field.remove();
+    if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
+    if (selection) {
+      selection.removeAllRanges();
+      for (const range of ranges) selection.addRange(range);
+    }
+  }
+}
+
 function ConversationView({ sender, sim, sims, revision, isOpen, onBack, onUnauthorized }: {
   sender: string; sim: string; sims: SIM[]; revision: number; isOpen: boolean; onBack: () => void; onUnauthorized: () => void;
 }) {
@@ -58,7 +83,7 @@ function ConversationView({ sender, sim, sims, revision, isOpen, onBack, onUnaut
   const [hasNext, setHasNext] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState<string | null>(null);
+  const [copied, setCopied] = useState<{ id: string; kind: "message" | "code" } | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const loadedPages = useRef(0);
   const position = useRef({ top: 0, height: 0, stick: true, prepend: false });
@@ -123,9 +148,19 @@ function ConversationView({ sender, sim, sims, revision, isOpen, onBack, onUnaut
     return () => clearTimeout(timer);
   }, [copied]);
 
-  async function copyMessage(message: Message) {
-    try { await navigator.clipboard.writeText(message.text); setCopied(message.id); }
-    catch { setError("Copy is unavailable in this browser. You can select and copy the message text."); }
+  async function copyText(id: string, kind: "message" | "code", text: string) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        try { await navigator.clipboard.writeText(text); }
+        catch { copyWithSelection(text); }
+      } else {
+        copyWithSelection(text);
+      }
+      setCopied({ id, kind });
+    } catch {
+      setCopied(null);
+      setError("Copy is unavailable in this browser. You can select and copy the text in the message.");
+    }
   }
 
   return <>
@@ -140,11 +175,18 @@ function ConversationView({ sender, sim, sims, revision, isOpen, onBack, onUnaut
       {messages.map((message, index) => {
         const day = new Date(message.createdAt).toLocaleDateString(undefined, { dateStyle: "long" });
         const previousDay = index > 0 ? new Date(messages[index - 1].createdAt).toLocaleDateString(undefined, { dateStyle: "long" }) : "";
+        const code = findVerificationCode(message.text);
+        const copiedCode = copied?.id === message.id && copied.kind === "code";
+        const copiedMessage = copied?.id === message.id && copied.kind === "message";
         return <div className="chat-entry" key={message.id}>
           {day !== previousDay && <div className="chat-date"><span>{day}</span></div>}
           <div className="chat-bubble">
             <p className="message-body" dir="auto">{message.text}</p>
-            <div className="chat-bubble-footer"><span className="sim-badge" title={message.sim}><Smartphone size={10} />{simLabel(message.sim, sims)}</span><time dateTime={message.createdAt} title={dateLabel(message.createdAt, true)}>{new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><button className="copy-button" onClick={() => copyMessage(message)} aria-label={`Copy message ${message.id}`}>{copied === message.id ? <Check size={14} /> : <Copy size={14} />}{copied === message.id ? "Copied" : "Copy"}</button></div>
+            {code && <button type="button" className="verification-code-button" onClick={() => copyText(message.id, "code", code)}>
+              {copiedCode ? <Check size={15} /> : <Copy size={15} />}
+              <span aria-live="polite">{copiedCode ? "Code copied" : "Copy code"}</span>
+            </button>}
+            <div className="chat-bubble-footer"><span className="sim-badge" title={message.sim}><Smartphone size={10} />{simLabel(message.sim, sims)}</span><time dateTime={message.createdAt} title={dateLabel(message.createdAt, true)}>{new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><button className="copy-button" onClick={() => copyText(message.id, "message", message.text)} aria-label={`Copy message ${message.id}`}>{copiedMessage ? <Check size={14} /> : <Copy size={14} />}{copiedMessage ? "Copied" : "Copy"}</button></div>
             <details className="chat-metadata"><summary>Message details</summary><dl className="metadata"><div><dt>Sent at</dt><dd>{stampLabel(message.sentStamp)}</dd></div><div><dt>Received on phone</dt><dd>{stampLabel(message.receivedStamp)}</dd></div><div><dt>Forwarded to inbox</dt><dd>{dateLabel(message.createdAt, true)}</dd></div><div><dt>Message ID</dt><dd>#{message.id}</dd></div></dl></details>
           </div>
         </div>;
