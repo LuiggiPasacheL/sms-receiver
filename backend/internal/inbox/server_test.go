@@ -38,6 +38,10 @@ func (s *memoryStore) Conversations(_ context.Context, filter Filter) (Conversat
 	s.filter = filter
 	return ConversationPage{Conversations: []Conversation{}, SIMs: []string{}}, nil
 }
+func (s *memoryStore) SenderDetails(_ context.Context, sender, sim string) (SenderDetails, error) {
+	s.filter = Filter{From: sender, SIM: sim}
+	return SenderDetails{SIMs: []SIM{}}, nil
+}
 func (*memoryStore) Ping(context.Context) error { return nil }
 
 func (s *memoryStore) SIMs(context.Context) ([]SIM, error) {
@@ -103,7 +107,7 @@ func TestViewerSessionAndLogout(t *testing.T) {
 	s.Config.ViewerPassword = "private-password"
 	s.Config.CookieSecure = true
 	h := s.Handler()
-	for _, path := range []string{"/api/messages", "/api/conversations", "/api/events"} {
+	for _, path := range []string{"/api/messages", "/api/conversations", "/api/sender?from=test", "/api/events"} {
 		if w := perform(h, "GET", path, "", nil); w.Code != 401 {
 			t.Fatalf("%s exposed without authentication", path)
 		}
@@ -170,6 +174,13 @@ func TestConversationAndExactSenderFilters(t *testing.T) {
 	w = perform(h, "GET", "/api/messages?from=%2B51987654321&sim=1&limit=50", "", nil)
 	if w.Code != 200 || store.filter.From != "+51987654321" || store.filter.Query != "" || store.filter.SIM != "1" {
 		t.Fatalf("exact sender filter=%+v status=%d", store.filter, w.Code)
+	}
+	w = perform(h, "GET", "/api/sender?from=%2B51987654321&sim=1", "", nil)
+	if w.Code != 200 || store.filter.From != "+51987654321" || store.filter.SIM != "1" {
+		t.Fatalf("sender details filter=%+v status=%d", store.filter, w.Code)
+	}
+	if w = perform(h, "GET", "/api/sender?sim=1", "", nil); w.Code != 400 {
+		t.Fatalf("sender details without a sender: %d", w.Code)
 	}
 	for _, query := range []string{"limit=0", "before=invalid", "q=" + strings.Repeat("a", 513), "from=" + strings.Repeat("a", 513)} {
 		if w = perform(h, "GET", "/api/conversations?"+query, "", nil); w.Code != 400 {

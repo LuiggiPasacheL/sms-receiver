@@ -120,8 +120,6 @@ svg { flex-shrink: 0; }
 .message-paper { background: #f8faf4; border: 1px solid #e8eddf; border-radius: 8px; padding: 16px 20px; }
 .paper-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .paper-top > span { display: flex; align-items: center; gap: 6px; color: #9ba68e; font-family: monospace; font-size: 8px; letter-spacing: .8px; }
-.copy-button { display: flex; gap: 5px; align-items: center; background: transparent; border: 0; color: #859775; font-size: 9px; padding: 4px 0 4px 4px; }
-.copy-button:hover { color: #3c6c3e; }
 .message-body { margin: 20px 0 26px; font-size: 14px; line-height: 1.95; color: #4e5d44; white-space: pre-wrap; overflow-wrap: anywhere; }
 .paper-footer { border-top: 1px solid #e8ecdf; padding-top: 11px; display: flex; align-items: center; gap: 6px; font-size: 8px; color: #a0ab91; }
 .paper-footer svg { color: #8ba37b; }
@@ -177,30 +175,48 @@ svg { flex-shrink: 0; }
 .form-error { font-size: 11px; color: #b26d52; }
 .message-detail.conversation-detail { display: flex; flex-direction: column; padding: 0; min-height: 0; overflow: hidden; }
 .conversation-header { flex-shrink: 0; padding: 20px 24px; border-bottom: 1px solid var(--line); }
-.conversation-identity { display: flex; align-items: center; gap: 12px; margin-top: 16px; min-width: 0; }
-.conversation-identity > div { min-width: 0; }
-.conversation-identity h2 { margin: 0; font-size: 18px; font-weight: 500; overflow-wrap: anywhere; }
-.conversation-identity p { margin: 6px 0 0; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.conversation-identity { margin: 12px 0 0; font-size: 18px; font-weight: 500; }
+.conversation-identity button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  text-align: start;
+}
+.conversation-identity button:hover { background: #eef3e9; }
+.conversation-identity button > svg { color: #677e5c; }
+.conversation-sender { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.conversation-sender > small { display: block; margin-top: 5px; font-size: 11px; color: var(--muted); }
 .conversation-messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; padding: 0 24px 24px; background: #fcfdf9; scrollbar-width: thin; scrollbar-color: #dfe5d9 transparent; }
 .chat-entry { margin-top: 12px; }
 .chat-date { display: flex; justify-content: center; padding: 16px 0 20px; color: #87917d; font-size: 10px; }
 .chat-date span { border: 1px solid #e8eddf; background: #f4f7ef; padding: 6px 12px; border-radius: 20px; }
 .chat-bubble { max-width: 90%; width: fit-content; min-width: min(230px, 100%); padding: 14px 16px 10px; border: 1px solid #e3e9da; border-radius: 3px 16px 16px; background: #f0f5e9; }
 .chat-bubble .message-body { margin: 0 0 12px; line-height: 1.7; }
-.verification-code-button {
+.message-copy-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.message-copy-button {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  min-height: 44px;
-  margin-bottom: 8px;
-  padding: 0 12px;
-  border: 1px solid #cbdcc7;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid #d4dfcf;
   border-radius: 7px;
-  background: #e4efdf;
+  background: transparent;
   color: #2f5a40;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
+.message-copy-button:hover { background: #e9f1e4; }
+.message-copy-button span { overflow-wrap: anywhere; }
+.verification-code-button { border-color: #cbdcc7; background: #e4efdf; }
 .verification-code-button:hover { background: #dae9d4; }
 .admin-email-list { margin: 0; list-style: none; padding: 0; }
 .admin-email-list li { padding: 10px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
@@ -222,6 +238,15 @@ svg { flex-shrink: 0; }
 .sim-dialog-header p { margin: 9px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
 .sim-dialog-header .icon-button { flex-shrink: 0; }
 .sim-cards { padding: 20px 24px 24px; display: grid; gap: 16px; }
+.sim-dialog-header .sender-address { color: var(--ink); font-size: 14px; overflow-wrap: anywhere; }
+.sender-details-content h3 { margin: 0 0 5px; font-size: 14px; font-weight: 600; }
+.sender-details-content > p { margin: 0; }
+.sender-summary { font-size: 13px; }
+.sender-summary > div { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.sender-summary dt, .sender-summary dd { color: var(--ink); }
+.sender-sims { padding: 0; margin: 0; list-style: none; }
+.sender-sims li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.sender-sims small { display: block; margin-top: 4px; color: var(--muted); }
 .sim-card { min-width: 0; padding: 18px; border: 1px solid var(--line); background: #fff; border-radius: 9px; }
 .sim-card-heading { display: flex; align-items: center; gap: 10px; color: #75876a; }
 .sim-card-heading > div { min-width: 0; }
@@ -311,8 +336,8 @@ svg { flex-shrink: 0; }
   .inbox-columns.detail-open .message-detail.conversation-detail { display: flex; }
   .conversation-header { padding: 8px 16px 16px; }
   .conversation-identity { margin-top: 8px; }
-  .conversation-identity h2 { font-size: 20px; }
-  .conversation-identity p { font-size: 12px; }
+  .conversation-identity { font-size: 20px; }
+  .conversation-sender > small { font-size: 12px; }
   .conversation-messages { padding: 0 14px 18px; }
   .chat-bubble { max-width: 96%; padding: 12px 14px 8px; }
   .chat-bubble .message-body { font-size: 16px; }
@@ -343,7 +368,7 @@ svg { flex-shrink: 0; }
   .list-empty p { font-size: 13px; }
   .message-paper { padding: 10px 16px 16px; }
   .paper-top > span { font-size: 9px; }
-  .copy-button { min-height: 44px; min-width: 64px; padding: 0 8px; margin-right: -8px; justify-content: center; font-size: 12px; color: #627b50; }
+  .message-copy-button { min-height: 44px; }
   .message-body { font-size: 16px; line-height: 1.8; margin-top: 14px; }
   .paper-footer { font-size: 10px; align-items: flex-start; line-height: 1.6; }
   .metadata { font-size: 13px; }
@@ -366,6 +391,7 @@ svg { flex-shrink: 0; }
   .auth-bottom { margin-top: 0; text-align: center; }
 }
 @media (max-width: 360px) {
+  .message-copy-button { gap: 4px; padding: 0 6px; font-size: 11px; }
   .breadcrumb > span { display: none; }
   .connection-pill { font-size: 9px; }
 }

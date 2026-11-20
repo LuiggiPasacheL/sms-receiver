@@ -145,6 +145,20 @@ func TestPostgresConversationsAndSenderHistory(t *testing.T) {
 	}
 	second := insert(secondSender, "another sender", "SIM 1")
 	latest := insert(firstSender, "latest on another SIM", "SIM 2")
+	details, err := store.SenderDetails(ctx, firstSender, "")
+	if err != nil || details.MessageCount != 56 || len(details.SIMs) != 2 || details.SIMs[0].MessageCount != 55 || details.SIMs[1].MessageCount != 1 ||
+		details.FirstSeen == nil || !details.FirstSeen.Equal(oldest.CreatedAt) || details.LastSeen == nil || !details.LastSeen.Equal(latest.CreatedAt) {
+		t.Fatalf("sender details must include all pages and only this sender: %+v err=%v", details, err)
+	}
+	details, err = store.SenderDetails(ctx, firstSender, "SIM 2")
+	if err != nil || details.MessageCount != 1 || len(details.SIMs) != 1 || details.SIMs[0].ID != "SIM 2" ||
+		details.FirstSeen == nil || !details.FirstSeen.Equal(latest.CreatedAt) {
+		t.Fatalf("SIM-filtered sender details=%+v err=%v", details, err)
+	}
+	details, err = store.SenderDetails(ctx, prefix+"missing", "")
+	if err != nil || details.MessageCount != 0 || details.SIMs == nil || len(details.SIMs) != 0 || details.FirstSeen != nil || details.LastSeen != nil {
+		t.Fatalf("empty sender details=%+v err=%v", details, err)
+	}
 	page, err := store.Conversations(ctx, Filter{Query: prefix, Limit: 1})
 	if err != nil || page.Total != 2 || page.MessageTotal != 57 || len(page.Conversations) != 1 || page.NextCursor == "" {
 		t.Fatalf("conversation page=%+v err=%v", page, err)

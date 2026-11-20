@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -26,6 +27,7 @@ type Repository interface {
 	Insert(context.Context, Incoming, string) (Message, bool, error)
 	List(context.Context, Filter) (Page, error)
 	Conversations(context.Context, Filter) (ConversationPage, error)
+	SenderDetails(context.Context, string, string) (SenderDetails, error)
 	SIMs(context.Context) ([]SIM, error)
 	SetSIMAlias(context.Context, string, string) error
 	DeleteSIM(context.Context, string) (int64, error)
@@ -155,6 +157,34 @@ func (s Store) Conversations(ctx context.Context, f Filter) (ConversationPage, e
 	}
 	p.SIMs, err = s.knownSIMs(ctx)
 	return p, err
+}
+
+func (s Store) SenderDetails(ctx context.Context, sender, sim string) (SenderDetails, error) {
+	details := SenderDetails{SIMs: []SIM{}}
+	rows, err := s.Pool.Query(ctx, `SELECT m.sim, coalesce(a.alias, ''), count(*), min(m.created_at), max(m.created_at)
+		FROM messages m LEFT JOIN sim_aliases a ON m.sim = a.sim
+		WHERE m.sender = $1 AND ($2 = '' OR m.sim = $2)
+		GROUP BY m.sim, a.alias ORDER BY m.sim`, sender, sim)
+	if err != nil {
+		return details, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var line SIM
+		var first, last time.Time
+		if err := rows.Scan(&line.ID, &line.Alias, &line.MessageCount, &first, &last); err != nil {
+			return details, err
+		}
+		details.MessageCount += line.MessageCount
+		if details.FirstSeen == nil || first.Before(*details.FirstSeen) {
+			details.FirstSeen = &first
+		}
+		if details.LastSeen == nil || last.After(*details.LastSeen) {
+			details.LastSeen = &last
+		}
+		details.SIMs = append(details.SIMs, line)
+	}
+	return details, rows.Err()
 }
 
 func (s Store) knownSIMs(ctx context.Context) ([]string, error) {

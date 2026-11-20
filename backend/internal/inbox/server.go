@@ -41,6 +41,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/session", s.logout)
 	mux.HandleFunc("GET /api/messages", s.requireViewer(s.list))
 	mux.HandleFunc("GET /api/conversations", s.requireViewer(s.list))
+	mux.HandleFunc("GET /api/sender", s.requireViewer(s.senderDetails))
 	mux.HandleFunc("GET /api/sims", s.requireViewer(s.listSIMs))
 	mux.HandleFunc("PUT /api/sims", s.requireAdmin(s.setSIMAlias, true))
 	mux.HandleFunc("DELETE /api/sims", s.requireAdmin(s.deleteSIM, true))
@@ -179,6 +180,24 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+func (s *Server) senderDetails(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	sender, sim := query.Get("from"), query.Get("sim")
+	if strings.TrimSpace(sender) == "" || len(sender) > 512 || len(sim) > 128 {
+		writeError(w, http.StatusBadRequest, "Provide a valid sender and SIM filter")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	details, err := s.Store.SenderDetails(ctx, sender, sim)
+	if err != nil {
+		s.Logger.Error("load sender details failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load sender details")
+		return
+	}
+	writeJSON(w, http.StatusOK, details)
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {

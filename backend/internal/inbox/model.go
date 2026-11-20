@@ -118,6 +118,13 @@ type Conversation struct {
 	MessageCount  int64   `json:"messageCount"`
 }
 
+type SenderDetails struct {
+	MessageCount int64      `json:"messageCount"`
+	FirstSeen    *time.Time `json:"firstSeen"`
+	LastSeen     *time.Time `json:"lastSeen"`
+	SIMs         []SIM      `json:"sims"`
+}
+
 type ConversationPage struct {
 	Conversations []Conversation `json:"conversations"`
 	NextCursor    string         `json:"nextCursor,omitempty"`

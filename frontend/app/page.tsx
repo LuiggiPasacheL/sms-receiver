@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDown, ArrowLeft, ArrowUpRight, Check, CheckCheck, ChevronDown, Copy, Inbox, LockKeyhole, LogOut, MessageSquare, Radio, RefreshCw, Search, ShieldCheck, Signal, Smartphone, Settings2, Users, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUpRight, Check, CheckCheck, ChevronDown, ChevronRight, Copy, Inbox, LockKeyhole, LogOut, MessageSquare, Radio, RefreshCw, Search, ShieldCheck, Signal, Smartphone, Settings2, Users, X } from "lucide-react";
 
 import { APIError, request } from "./api";
 import { AdminManager } from "./admin-manager";
@@ -20,6 +20,7 @@ type Message = {
 type Conversation = { latestMessage: Message; messageCount: number };
 type ConversationPage = { conversations: Conversation[]; nextCursor?: string; total: number; messageTotal: number; today: number; sims: string[] };
 type Page = { messages: Message[]; nextCursor?: string; total: number; today: number; sims: string[] };
+type SenderDetails = { messageCount: number; firstSeen: string | null; lastSeen: string | null; sims: SIM[] };
 type Session = { authenticated: boolean; passwordRequired?: boolean; provider?: "cloudflare"; email?: string; admin?: boolean };
 type Connection = "connecting" | "live" | "reconnecting";
 
@@ -74,6 +75,58 @@ function copyWithSelection(text: string) {
   }
 }
 
+function SenderDetailsDialog({ sender, sim, scope, revision, onClose, onUnauthorized }: {
+  sender: string; sim: string; scope: string; revision: number; onClose: () => void; onUnauthorized: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [details, setDetails] = useState<SenderDetails | null>(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => { dialog.current?.showModal(); }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({ from: sender, sim });
+    setError("");
+    request<SenderDetails>(`/api/sender?${params}`, { signal: controller.signal })
+      .then((result) => { if (!controller.signal.aborted) setDetails(result); })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        if (cause instanceof APIError && cause.status === 401) onUnauthorized();
+        else setError(cause instanceof Error ? cause.message : "Could not load sender details");
+      });
+    return () => controller.abort();
+  }, [sender, sim, revision, retry, onUnauthorized]);
+
+  return <dialog className="sim-dialog" ref={dialog} aria-labelledby="sender-details-title" onClose={onClose}>
+    <header className="sim-dialog-header">
+      <div><h2 id="sender-details-title">Sender details</h2><p className="sender-address" dir="auto">{sender}</p></div>
+      <button type="button" className="icon-button" aria-label="Close sender details" onClick={() => dialog.current?.close()}><X size={18} /></button>
+    </header>
+    {error && <div className="error-banner" role="alert"><span>{error}</span><button type="button" onClick={() => setRetry((n) => n + 1)}>Retry</button></div>}
+    <div className="sim-cards sender-details-content">
+      {!details && !error && <p role="status">Loading sender details…</p>}
+      {details && <>
+        <dl className="metadata sender-summary">
+          <div><dt>Showing</dt><dd>{scope}</dd></div>
+          <div><dt>Messages</dt><dd>{number(details.messageCount)}</dd></div>
+          <div><dt>First in inbox</dt><dd>{details.firstSeen ? dateLabel(details.firstSeen, true) : "—"}</dd></div>
+          <div><dt>Latest in inbox</dt><dd>{details.lastSeen ? dateLabel(details.lastSeen, true) : "—"}</dd></div>
+        </dl>
+        {details.sims.length > 0 && <section aria-labelledby="sender-sims-title">
+          <h3 id="sender-sims-title">Messages by SIM</h3>
+          <ul className="sender-sims">
+            {details.sims.map(({ id, alias, messageCount }) => <li key={id}>
+              <span>{alias || id || "Unspecified SIM"}{alias && alias !== id && <small>{id}</small>}</span>
+              <strong aria-label={`${number(messageCount)} ${messageCount === 1 ? "message" : "messages"}`}>{number(messageCount)}</strong>
+            </li>)}
+          </ul>
+        </section>}
+      </>}
+    </div>
+  </dialog>;
+}
+
 function ConversationView({ sender, sim, sims, revision, isOpen, onBack, onUnauthorized }: {
   sender: string; sim: string; sims: SIM[]; revision: number; isOpen: boolean; onBack: () => void; onUnauthorized: () => void;
 }) {
@@ -85,6 +138,7 @@ function ConversationView({ sender, sim, sims, revision, isOpen, onBack, onUnaut
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState<{ id: string; kind: "message" | "code" } | null>(null);
+  const [showSender, setShowSender] = useState(false);
   const scroll = useRef<HTMLDivElement>(null);
   const loadedPages = useRef(0);
   const position = useRef({ top: 0, height: 0, stick: true, prepend: false });
@@ -167,8 +221,18 @@ function ConversationView({ sender, sim, sims, revision, isOpen, onBack, onUnaut
   return <>
     <header className="conversation-header">
       <div className="detail-topline"><button className="back-button" onClick={onBack}><ArrowLeft size={16} /> Inbox</button><span className="eyebrow">CONVERSATION</span><span className="received-chip"><LockKeyhole size={11} /> Read-only</span></div>
-      <div className="conversation-identity"><span className={`avatar avatar-${sender.charCodeAt(0) % 4}`}>{initials(sender)}</span><div><h2 tabIndex={-1}>{sender}</h2><p>{loading && total === 0 ? "Loading messages…" : `${number(total)} ${total === 1 ? "message" : "messages"}`}{sim && ` · ${simLabel(sim, sims)}`}</p></div></div>
+      <h2 className="conversation-identity">
+        <button type="button" aria-label={`Sender details for ${sender}`} aria-haspopup="dialog" onClick={() => setShowSender(true)}>
+          <span className={`avatar avatar-${sender.charCodeAt(0) % 4}`} aria-hidden="true">{initials(sender)}</span>
+          <span className="conversation-sender">
+            <span dir="auto">{sender}</span>
+            <small>{loading && total === 0 ? "Loading messages…" : `${number(total)} ${total === 1 ? "message" : "messages"}`}{sim && ` · ${simLabel(sim, sims)}`}</small>
+          </span>
+          <ChevronRight size={18} aria-hidden="true" />
+        </button>
+      </h2>
     </header>
+    {showSender && <SenderDetailsDialog sender={sender} sim={sim} scope={sim ? simLabel(sim, sims) : "All SIMs"} revision={revision} onClose={() => setShowSender(false)} onUnauthorized={onUnauthorized} />}
     {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setRetry((r) => r + 1)}>Retry</button></div>}
     <div className="conversation-messages" ref={scroll} aria-busy={loading} aria-label={`Messages from ${sender}`}>
       {hasNext && <button className="load-more" disabled={loading} onClick={() => setPageCount((p) => p + 1)}>{loading ? "Loading…" : "Load older messages"}<ArrowDown size={13} /></button>}
@@ -183,11 +247,17 @@ function ConversationView({ sender, sim, sims, revision, isOpen, onBack, onUnaut
           {day !== previousDay && <div className="chat-date"><span>{day}</span></div>}
           <div className="chat-bubble">
             <p className="message-body" dir="auto">{message.text}</p>
-            {code && <button type="button" className="verification-code-button" onClick={() => copyText(message.id, "code", code)}>
-              {copiedCode ? <Check size={15} /> : <Copy size={15} />}
-              <span aria-live="polite">{copiedCode ? "Code copied" : "Copy code"}</span>
-            </button>}
-            <div className="chat-bubble-footer"><span className="sim-badge" title={message.sim}><Smartphone size={10} />{simLabel(message.sim, sims)}</span><time dateTime={message.createdAt} title={dateLabel(message.createdAt, true)}>{new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><button className="copy-button" onClick={() => copyText(message.id, "message", message.text)} aria-label={`Copy message ${message.id}`}>{copiedMessage ? <Check size={14} /> : <Copy size={14} />}{copiedMessage ? "Copied" : "Copy"}</button></div>
+            <div className="chat-bubble-footer"><span className="sim-badge" title={message.sim}><Smartphone size={10} />{simLabel(message.sim, sims)}</span><time dateTime={message.createdAt} title={dateLabel(message.createdAt, true)}>{new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>
+            <div className="message-copy-actions">
+              <button type="button" className="message-copy-button" onClick={() => copyText(message.id, "message", message.text)}>
+                {copiedMessage ? <Check size={14} /> : <Copy size={14} />}
+                <span aria-live="polite">{copiedMessage ? "Message copied" : "Copy message"}</span>
+              </button>
+              {code && <button type="button" className="message-copy-button verification-code-button" onClick={() => copyText(message.id, "code", code)}>
+                {copiedCode ? <Check size={14} /> : <Copy size={14} />}
+                <span aria-live="polite">{copiedCode ? "Code copied" : "Copy code"}</span>
+              </button>}
+            </div>
             <details className="chat-metadata"><summary>Message details</summary><dl className="metadata"><div><dt>Sent at</dt><dd>{stampLabel(message.sentStamp)}</dd></div><div><dt>Received on phone</dt><dd>{stampLabel(message.receivedStamp)}</dd></div><div><dt>Forwarded to inbox</dt><dd>{dateLabel(message.createdAt, true)}</dd></div><div><dt>Message ID</dt><dd>#{message.id}</dd></div></dl></details>
           </div>
         </div>;
@@ -229,7 +299,7 @@ export default function Home() {
     if (mobileDetail) {
       if (window.matchMedia("(max-width: 700px), (max-height: 520px) and (max-width: 960px)").matches) {
         messageDetail.current?.scrollTo({ top: 0 });
-        messageDetail.current?.querySelector<HTMLHeadingElement>("h2")?.focus({ preventScroll: true });
+        messageDetail.current?.querySelector<HTMLButtonElement>(".conversation-identity button")?.focus({ preventScroll: true });
       }
     } else if (openedRow.current?.isConnected) {
       if (messageList.current) messageList.current.scrollTop = listScrollTop.current;
