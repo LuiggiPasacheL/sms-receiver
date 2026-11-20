@@ -21,6 +21,9 @@ var simSchema string
 //go:embed migrations/003_admin_emails.sql
 var adminsSchema string
 
+//go:embed migrations/004_forwarder_heartbeat.sql
+var heartbeatSchema string
+
 var ErrSIMNotFound = errors.New("SIM not found")
 
 type Repository interface {
@@ -31,6 +34,8 @@ type Repository interface {
 	SIMs(context.Context) ([]SIM, error)
 	SetSIMAlias(context.Context, string, string) error
 	DeleteSIM(context.Context, string) (int64, error)
+	RecordHeartbeat(context.Context) (time.Time, error)
+	LastHeartbeat(context.Context) (*time.Time, error)
 	Ping(context.Context) error
 }
 
@@ -52,6 +57,9 @@ func (s Store) Migrate(ctx context.Context) error {
 		return err
 	}
 	if _, err = tx.Exec(ctx, adminsSchema); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, heartbeatSchema); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

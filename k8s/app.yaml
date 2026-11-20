@@ -58,6 +58,14 @@ spec:
                   name: sms-receiver-secrets
                   key: CLOUDFLARE_ACCESS_TEAM_URL
                   optional: true
+            - name: HEARTBEAT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sms-receiver-secrets
+                  key: HEARTBEAT_TOKEN
+                  optional: true
+            - name: HEARTBEAT_TIMEOUT
+              value: "15m"
             - name: CLOUDFLARE_ACCESS_AUD
               valueFrom:
                 secretKeyRef:

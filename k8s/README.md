@@ -45,6 +45,8 @@ sudo k3s kubectl -n sms-receiver create secret generic sms-receiver-secrets \
 
 Run that creation command once. If the Secret already exists from the earlier setup, add its `DATABASE_URL` key using your cluster's secret-management workflow before applying the app manifest. Restart the Deployment after changing its environment secrets. If switching from an existing database, migrate the data before changing the connection URL.
 
+To enable phone monitoring, add a separate random `HEARTBEAT_TOKEN` to `.env` before creating the Secret (or add it through your secret-management workflow). The manifest reads it as an optional Secret key and uses `HEARTBEAT_TIMEOUT=15m`; adjust that value if the phone interval is longer. After deployment, configure SMS Forwarder’s heartbeat URL as `https://YOUR_INBOX_DOMAIN/heartbeat?token=YOUR_HEARTBEAT_TOKEN`, with a 5-minute interval. Allow the phone to reach `/heartbeat` without interactive Cloudflare Access sign-in; the app validates its token. See [heartbeat setup](../README.md#phone-heartbeat-monitoring).
+
 ## 3. Start the app
 
 ```sh

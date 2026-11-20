@@ -98,8 +98,13 @@ func run(logger *slog.Logger) error {
 	settings := inbox.Config{
 		ViewerPassword: os.Getenv("VIEWER_PASSWORD"),
 		ForwarderToken: forwarderToken,
+		HeartbeatToken: os.Getenv("HEARTBEAT_TOKEN"),
 		CookieSecure:   os.Getenv("COOKIE_SECURE") == "true",
 		StaticDir:      env("STATIC_DIR", "../frontend/out"),
+	}
+	settings.HeartbeatTimeout, err = time.ParseDuration(env("HEARTBEAT_TIMEOUT", "15m"))
+	if err != nil || settings.HeartbeatTimeout < time.Second || settings.HeartbeatTimeout > 7*24*time.Hour {
+		return errors.New("HEARTBEAT_TIMEOUT must be a duration between 1s and 168h (for example 15m)")
 	}
 	if access == nil && settings.ViewerPassword == "" {
 		logger.Warn("viewer password is unset; inbox access is public")

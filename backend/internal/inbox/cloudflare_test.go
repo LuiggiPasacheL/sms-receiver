@@ -72,6 +72,7 @@ func TestCloudflareAccessPermissions(t *testing.T) {
 	})}
 	s.Config.ViewerPassword = "legacy-password"
 	s.Config.ForwarderToken = "forwarder-token"
+	s.Config.HeartbeatToken = "heartbeat-token"
 	h := s.Handler()
 	admin := map[string]string{"Cf-Access-Jwt-Assertion": signToken("Owner@Example.COM", nil)}
 	viewer := map[string]string{"Authorization": "Bearer " + signToken("viewer@example.com", nil)}
@@ -102,11 +103,13 @@ func TestCloudflareAccessPermissions(t *testing.T) {
 		}, http.StatusUnauthorized, "")
 	}
 	assertResponse(http.MethodGet, "/api/events", "", nil, http.StatusUnauthorized, "")
+	assertResponse(http.MethodGet, "/api/forwarder", "", nil, http.StatusUnauthorized, "")
 	assertResponse(http.MethodPost, "/api/session", `{"password":"legacy-password"}`, nil, http.StatusForbidden, "Cloudflare")
 	assertResponse(http.MethodGet, "/api/session", "", admin, http.StatusOK, `"admin":true`)
 	assertResponse(http.MethodGet, "/api/session", "", viewer, http.StatusOK, `"admin":false`)
 	assertResponse(http.MethodGet, "/api/messages", "", viewer, http.StatusOK, `"messages"`)
 	assertResponse(http.MethodGet, "/api/sims", "", viewer, http.StatusOK, `"sims"`)
+	assertResponse(http.MethodGet, "/api/forwarder", "", viewer, http.StatusOK, `"unknown"`)
 	assertResponse(http.MethodGet, "/api/admins", "", viewer, http.StatusForbidden, "")
 	assertResponse(http.MethodPut, "/api/admins", `{"email":"viewer@example.com"}`, viewer, http.StatusForbidden, "")
 	assertResponse(http.MethodPut, "/api/sims", `{"sim":"SIM 1","alias":"Work"}`, viewer, http.StatusForbidden, "")
@@ -124,4 +127,5 @@ func TestCloudflareAccessPermissions(t *testing.T) {
 	assertResponse(http.MethodDelete, "/api/sims?sim=SIM+1", "", viewer, http.StatusOK, `"deletedMessages":7`)
 	assertResponse(http.MethodPost, "/messages", `{"from":"test","text":"message"}`, nil, http.StatusUnauthorized, "")
 	assertResponse(http.MethodPost, "/messages", `{"from":"test","text":"message"}`, map[string]string{"X-Forwarder-Token": "forwarder-token"}, http.StatusCreated, "")
+	assertResponse(http.MethodPost, "/heartbeat?token=heartbeat-token", "", nil, http.StatusNoContent, "")
 }

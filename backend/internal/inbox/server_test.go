@@ -18,12 +18,14 @@ import (
 )
 
 type memoryStore struct {
-	in     Incoming
-	agent  string
-	filter Filter
-	simID  string
-	alias  string
-	simErr error
+	in           Incoming
+	agent        string
+	filter       Filter
+	simID        string
+	alias        string
+	simErr       error
+	heartbeat    *time.Time
+	heartbeatErr error
 }
 
 func (s *memoryStore) Insert(_ context.Context, in Incoming, agent string) (Message, bool, error) {
@@ -43,6 +45,18 @@ func (s *memoryStore) SenderDetails(_ context.Context, sender, sim string) (Send
 	return SenderDetails{SIMs: []SIM{}}, nil
 }
 func (*memoryStore) Ping(context.Context) error { return nil }
+
+func (s *memoryStore) RecordHeartbeat(context.Context) (time.Time, error) {
+	now := time.Now().UTC()
+	if s.heartbeatErr == nil {
+		s.heartbeat = &now
+	}
+	return now, s.heartbeatErr
+}
+
+func (s *memoryStore) LastHeartbeat(context.Context) (*time.Time, error) {
+	return s.heartbeat, s.heartbeatErr
+}
 
 func (s *memoryStore) SIMs(context.Context) ([]SIM, error) {
 	return []SIM{{ID: "SIM 1", Alias: "Personal", MessageCount: 7}}, s.simErr
@@ -107,7 +121,7 @@ func TestViewerSessionAndLogout(t *testing.T) {
 	s.Config.ViewerPassword = "private-password"
 	s.Config.CookieSecure = true
 	h := s.Handler()
-	for _, path := range []string{"/api/messages", "/api/conversations", "/api/sender?from=test", "/api/events"} {
+	for _, path := range []string{"/api/messages", "/api/conversations", "/api/sender?from=test", "/api/events", "/api/forwarder"} {
 		if w := perform(h, "GET", path, "", nil); w.Code != 401 {
 			t.Fatalf("%s exposed without authentication", path)
 		}

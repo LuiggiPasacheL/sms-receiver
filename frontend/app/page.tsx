@@ -7,6 +7,7 @@ import { APIError, request } from "./api";
 import { AdminManager } from "./admin-manager";
 import { SIMManager, simLabel, type SIM } from "./sim-manager";
 import { findVerificationCode } from "./verification-code";
+import { ForwarderStatus } from "./forwarder-status";
 
 type Message = {
   id: string;
@@ -483,7 +484,7 @@ export default function Home() {
         <nav aria-label="Main navigation"><button className="nav-item active" onClick={() => { setSearch(""); setSim(""); setPageCount(1); setMobileDetail(false); }}><Inbox size={18} /><span>Inbox</span><span className="nav-count">{number(stats.total)}</span></button></nav>
         <div className="sidebar-section"><span className="eyebrow">AT A GLANCE</span><div className="stat-row"><span>Messages in view</span><strong>{number(stats.total)}</strong></div><div className="stat-row"><span>Received today <small>UTC</small></span><strong>{number(stats.today)}</strong></div><div className="stat-row"><span>Connected SIMs</span><strong>{stats.sims.length.toString().padStart(2, "0")}</strong></div></div>
         <div className="sidebar-bottom">
-          <div className="quiet-card"><div className="quiet-icon"><Radio size={20} strokeWidth={1.4} /></div><h3>Your phone, in sync.</h3><p>Incoming messages appear here automatically.</p><span><span className={`status-dot ${connection === "live" ? "" : "offline"}`} /> {connection === "live" ? "Listening for messages" : "Waiting for connection"}</span></div>
+          <div className="quiet-card"><div className="quiet-icon"><Radio size={20} strokeWidth={1.4} /></div><h3>Your inbox, connected.</h3><p>Incoming messages appear here automatically.</p><span><span className={`status-dot ${connection === "live" ? "" : "offline"}`} /> {connection === "live" ? "Listening for messages" : "Waiting for connection"}</span></div>
           <div className="readonly"><ShieldCheck size={15} /><span>Incoming messages only</span></div>
           {session.passwordRequired && <button className="sign-out" onClick={logout}><LogOut size={14} /> Sign out</button>}
           <div className="sidebar-footer"><span>RELAY / SMS INBOX</span><span>V.01</span></div>
@@ -494,6 +495,7 @@ export default function Home() {
         <header className="topbar"><div className="breadcrumb"><span>Workspace</span><span>/</span><strong>Inbox</strong></div><div className="topbar-actions"><div className={`connection-pill ${connection !== "live" ? "is-reconnecting" : ""}`} role="status"><span className="status-dot" />{connection === "live" ? "Live updates on" : connection === "connecting" ? "Connecting…" : "Reconnecting…"}</div>{session.admin && <button className="icon-button manage-sims-button" aria-label="Manage administrators" onClick={() => setManagingAdmins(true)}><Users size={16} /><span>Administrators</span></button>}{session.passwordRequired && <button className="mobile-sign-out icon-button" aria-label="Sign out" onClick={logout}><LogOut size={14} /></button>}</div></header>
         <div className="page-heading"><div><div className="eyebrow heading-eyebrow">YOUR MESSAGES, TOGETHER</div><h1>Inbox<span className="heading-dot">.</span></h1><p>A little less checking your phone.</p></div><div className="heading-note"><Signal size={18} /><div><strong>Always in the loop</strong><span>New messages arrive in real time</span></div></div></div>
 
+        <ForwarderStatus revision={revision} connected={connection === "live"} onUnauthorized={sessionExpired} />
         <section className="inbox-panel" aria-label="SMS messages">
           <div className="inbox-toolbar"><div className="inbox-title"><Inbox size={17} /><strong>Conversations</strong><span className="count-badge">{number(stats.conversations)}</span></div><div className="toolbar-controls"><label className="sim-select"><Smartphone size={14} /><select aria-label="Filter by SIM" value={sim} onChange={(e) => { setSim(e.target.value); setPageCount(1); }}><option value="">All SIMs</option>{sims.map((value) => <option key={value.id} value={value.id}>{value.alias ? `${value.alias} (${value.id})` : value.id}</option>)}</select><ChevronDown size={13} /></label>{(session.provider !== "cloudflare" || session.admin) && <button className="icon-button manage-sims-button" aria-label="Manage SIMs" onClick={() => setManagingSIMs(true)}><Settings2 size={15} /><span>Manage SIMs</span></button>}<button className={`icon-button ${loading ? "is-loading" : ""}`} aria-label="Refresh inbox" onClick={() => setRevision((r) => r + 1)} disabled={loading}><RefreshCw size={15} className={loading ? "spin" : ""} /></button></div></div>
           {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setRevision((r) => r + 1)}>Retry</button></div>}

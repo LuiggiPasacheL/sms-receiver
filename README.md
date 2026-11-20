@@ -66,6 +66,27 @@ curl -i http://localhost:8080/messages \
   --data '{"from":"Test phone","text":"Hello from SMS Forwarder!","sentStamp":1794528000000,"receivedStamp":1794528001000,"sim":"SIM 1"}'
 ```
 
+## Phone heartbeat monitoring
+
+[SMS Forwarder 2.4.0](https://github.com/bogkonstantin/android_income_sms_gateway_webhook/releases/tag/v2.4.0) adds a global heartbeat under **Settings**. It sends an empty HTTP POST to the configured URL, every **5 minutes** by default (minimum 1 minute). Its heartbeat settings have no custom-header field, so Relay accepts a separate secret in the URL; normal SMS forwarding continues to use `X-Forwarder-Token`.
+
+1. Set `HEARTBEAT_TOKEN` to a long, random URL-safe secret, different from `FORWARDER_TOKEN`, and restart the app. In Kubernetes, add this key to `sms-receiver-secrets` and restart the Deployment.
+2. In the phone app's **Settings**, enable heartbeat and set its URL to `https://YOUR_INBOX_DOMAIN/heartbeat?token=YOUR_HEARTBEAT_TOKEN` (or `http://YOUR_SERVER_IP:8080/heartbeat?token=YOUR_HEARTBEAT_TOKEN` on a trusted LAN).
+3. Keep the phone interval at **5 minutes**, save, and tap **Test**. A successful ping returns HTTP `204`.
+4. Open the inbox. The phone status above the conversations shows **Phone active** and the last heartbeat time. After **15 minutes** without a ping it shows **Phone inactive**. `HEARTBEAT_TIMEOUT` changes that margin (for example `30m` for a longer phone interval); choose a margin that tolerates delayed or missed pings.
+
+Without `HEARTBEAT_TOKEN`, monitoring is disabled and POSTs return `503`. Before the first ping, the web shows **Waiting for first heartbeat**. A browser connection or status-fetch failure displays **Phone status unavailable**. An inactive status means the receiver has not heard from the phone within the margin; it cannot distinguish a stopped app, an offline phone, or a network failure, and a successful heartbeat does not verify SMS permissions or carrier delivery.
+
+Relay stores only the most recent heartbeat in PostgreSQL, so it survives restarts and is shared by API replicas. Pings never create SMS messages or change inbox counts. The current monitor tracks **one phone per inbox**; multiple phones using the same token share the same status. Heartbeat inserts/updates notify open inboxes through the existing SSE stream. The browser also expires the active status locally, without waiting for another ping or polling the API.
+
+The heartbeat URL is a credential: use HTTPS outside a trusted LAN and redact its `token` query parameter from reverse-proxy access logs. If Cloudflare Access protects the inbox, make `/heartbeat` reachable by the phone without interactive sign-in, alongside `/messages`; Relay still validates the dedicated heartbeat token. Keep `/api/forwarder` under the browser's existing authentication policy. The token is never sent to the browser.
+
+To test from a terminal, replace the URL and token:
+
+```sh
+curl -i -X POST 'http://localhost:8080/heartbeat?token=YOUR_HEARTBEAT_TOKEN'
+```
+
 ## Manage SIMs
 
 Open **Manage SIMs** beside the SIM filter. Assign a display alias such as “Personal” or “Work”; leave it empty to restore the original identifier. Aliases are stored in PostgreSQL and appear in filters and message bubbles. The forwarder continues to send its original SIM value, and filtering and deletion always use that exact identifier. Aliases may contain up to 128 characters, and surrounding whitespace is trimmed.
@@ -95,7 +116,7 @@ Keep `/messages` reachable by SMS Forwarder using its current Cloudflare routing
 
 ## Live updates
 
-`GET /api/events` maintains an authenticated SSE connection. PostgreSQL triggers emit `NOTIFY` for message inserts/deletions and SIM alias changes, and each API instance uses `LISTEN` on a dedicated connection to broadcast an invalidation to its connected browsers. The browser then reloads its current message window and filter counts. There is no browser polling loop.
+`GET /api/events` maintains an authenticated SSE connection. PostgreSQL triggers emit `NOTIFY` for message inserts/deletions, SIM alias changes, and phone heartbeats, and each API instance uses `LISTEN` on a dedicated connection to broadcast an invalidation to its connected browsers. The browser then reloads its current message window, filter counts, and phone status. There is no browser polling loop.
 
 Every SSE connection begins with a `ready` event and a fresh inbox fetch. If a browser or database listener reconnects, clients refresh again to recover missed changes. Heartbeat comments are sent every 20 seconds, writes have deadlines, and notifications are coalesced for slow clients. The server cancels streams on shutdown.
 
@@ -138,7 +159,7 @@ npm ci
 npm run dev
 ```
 
-Open **http://localhost:3000**. During development, Next.js proxies `/api/*` and `/messages` to Go at `http://127.0.0.1:8080`; set `API_PROXY_TARGET` to change it. Keep `COOKIE_SECURE=false` for local HTTP. A production frontend export is served by Go from `frontend/out`.
+Open **http://localhost:3000**. During development, Next.js proxies `/api/*`, `/messages`, and `/heartbeat` to Go at `http://127.0.0.1:8080`; set `API_PROXY_TARGET` to change it. Keep `COOKIE_SECURE=false` for local HTTP. A production frontend export is served by Go from `frontend/out`.
 
 ## Configuration
 
@@ -151,6 +172,8 @@ Open **http://localhost:3000**. During development, Next.js proxies `/api/*` and
 | `CLOUDFLARE_ACCESS_TEAM_URL` | HTTPS URL for the Cloudflare Access team | Empty |
 | `CLOUDFLARE_ACCESS_AUD` | Audience tag for the Cloudflare Access app | Empty |
 | `FORWARDER_TOKEN` | Required `X-Forwarder-Token` header on ingestion | Empty: unauthenticated ingestion |
+| `HEARTBEAT_TOKEN` | Separate secret for the phone heartbeat URL | Empty: monitoring disabled |
+| `HEARTBEAT_TIMEOUT` | Time without a heartbeat before marking the phone inactive; Go duration, 1s–168h | `15m` |
 | `COOKIE_SECURE` | Use Secure session cookies for HTTPS | `false` |
 | `APP_PORT` | Compose's exposed app port | `8080` |
 | `POSTGRES_PASSWORD` | Compose database password; use URL-safe characters | Required by Compose |
@@ -163,6 +186,8 @@ Compose requires all three secrets. The frontend assets are public; all inbox da
 | Route | Purpose |
 | --- | --- |
 | `POST /messages` | SMS Forwarder webhook; optional token authentication |
+| `POST /heartbeat?token=` | Empty phone heartbeat POST; requires `HEARTBEAT_TOKEN`, returns `204` |
+| `GET /api/forwarder` | Authenticated phone status: `disabled`, `unknown`, `online`, or `offline`; includes `lastSeen`, `serverTime`, and `timeoutSeconds` |
 | `GET /api/conversations?q=&sim=&limit=50&before=` | Authenticated conversations, newest activity first; includes `conversations` (`latestMessage`, `messageCount`), `nextCursor`, conversation `total`, `messageTotal`, `today`, and known `sims` |
 | `GET /api/messages?q=&sim=&from=&limit=50&before=` | Authenticated message history; `from` filters by exact sender; newest first, `limit` 1–100; response includes `messages`, `nextCursor`, filtered `total`/`today`, and all known `sims` |
 | `GET /api/sims` | SIM inventory: `sims` entries contain original `id`, display `alias`, and `messageCount` |

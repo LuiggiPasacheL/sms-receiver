@@ -16,10 +16,12 @@ import (
 )
 
 type Config struct {
-	ViewerPassword string
-	ForwarderToken string
-	CookieSecure   bool
-	StaticDir      string
+	ViewerPassword   string
+	ForwarderToken   string
+	HeartbeatToken   string
+	HeartbeatTimeout time.Duration
+	CookieSecure     bool
+	StaticDir        string
 }
 
 type Server struct {
@@ -36,6 +38,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("POST /messages", s.ingest)
+	mux.HandleFunc("POST /heartbeat", s.heartbeat)
+	mux.HandleFunc("GET /api/forwarder", s.requireViewer(s.getForwarderStatus))
 	mux.HandleFunc("GET /api/session", s.session)
 	mux.HandleFunc("POST /api/session", s.login)
 	mux.HandleFunc("DELETE /api/session", s.logout)
@@ -84,7 +88,7 @@ func (s *Server) Handler() http.Handler {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
 			// Browser session mutations are same-origin only. Webhooks are exempt.
 			site := r.Header.Get("Sec-Fetch-Site")
-			if r.URL.Path != "/messages" && site != "" && site != "same-origin" && site != "none" {
+			if r.URL.Path != "/messages" && r.URL.Path != "/heartbeat" && site != "" && site != "same-origin" && site != "none" {
 				writeError(w, http.StatusForbidden, "Cross-site request rejected")
 				return
 			}
