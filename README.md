@@ -50,7 +50,17 @@ Map the app's own template variables to these JSON field names:
 }
 ```
 
-The example above contains literal test data; substitute the variable syntax provided by your SMS Forwarder app. The endpoint accepts the exact `User-Agent` you supplied, but does not treat it as authentication. Use `X-Forwarder-Token` for authentication. If the forwarding app cannot set custom headers, the standalone Go server allows an empty `FORWARDER_TOKEN`; the provided Compose configuration requires one by default.
+The example above contains literal test data; substitute the variable syntax provided by your SMS Forwarder app. The endpoint accepts the exact `User-Agent` you supplied, but does not treat it as authentication.
+
+SMS Forwarder 2.4.0 can authenticate messages using **Sign with HMAC-SHA-256** in the forwarding rule. Enable it and set its signing secret to the exact value of `FORWARDER_TOKEN`. The app sends `X-Signature` as the hexadecimal HMAC-SHA256 of the exact UTF-8 request body. Relay verifies the raw bytes before decoding JSON, including whitespace and line breaks. Use the environment value literally as the signing secret, even if it looks like Base64.
+
+Authentication uses the same `FORWARDER_TOKEN` for both methods, in this order:
+
+1. Accept a valid `X-Signature` from the app.
+2. If the signature is absent or invalid, fall back to comparing `X-Forwarder-Token` with `FORWARDER_TOKEN`.
+3. Return `401` if neither method succeeds.
+
+With signing enabled, the custom `X-Forwarder-Token` header can be omitted. Existing forwarding rules using that header continue to work. The standalone Go server allows an empty `FORWARDER_TOKEN` for unauthenticated ingestion; the provided Compose configuration requires one by default.
 
 `from` and `text` are required non-empty strings. `sentStamp`, `receivedStamp`, and `sim` can be strings, numbers, null, or omitted. Objects/arrays/booleans are rejected for those fields. Timestamp values are preserved exactly in PostgreSQL JSONB. The interface formats Unix seconds/milliseconds and ISO timestamps with explicit timezones, and displays other timestamp strings as supplied. Display times use the browser timezone; the “Received today” count uses UTC and the server's ingestion time.
 
@@ -68,7 +78,7 @@ curl -i http://localhost:8080/messages \
 
 ## Phone heartbeat monitoring
 
-[SMS Forwarder 2.4.0](https://github.com/bogkonstantin/android_income_sms_gateway_webhook/releases/tag/v2.4.0) adds a global heartbeat under **Settings**. It sends an empty HTTP POST to the configured URL, every **5 minutes** by default (minimum 1 minute). Its heartbeat settings have no custom-header field, so Relay accepts a separate secret in the URL; normal SMS forwarding continues to use `X-Forwarder-Token`.
+[SMS Forwarder 2.4.0](https://github.com/bogkonstantin/android_income_sms_gateway_webhook/releases/tag/v2.4.0) adds a global heartbeat under **Settings**. It sends an empty HTTP POST to the configured URL, every **5 minutes** by default (minimum 1 minute). Its heartbeat settings have no custom-header field, so Relay accepts a separate secret in the URL; normal SMS forwarding accepts `X-Signature` or `X-Forwarder-Token` using `FORWARDER_TOKEN`.
 
 1. Set `HEARTBEAT_TOKEN` to a long, random URL-safe secret, different from `FORWARDER_TOKEN`, and restart the app. In Kubernetes, add this key to `sms-receiver-secrets` and restart the Deployment.
 2. In the phone app's **Settings**, enable heartbeat and set its URL to `https://YOUR_INBOX_DOMAIN/heartbeat?token=YOUR_HEARTBEAT_TOKEN` (or `http://YOUR_SERVER_IP:8080/heartbeat?token=YOUR_HEARTBEAT_TOKEN` on a trusted LAN).
@@ -171,7 +181,7 @@ Open **http://localhost:3000**. During development, Next.js proxies `/api/*`, `/
 | `VIEWER_PASSWORD` | Password for legacy inbox access without Cloudflare | Empty: public inbox when Cloudflare Access is disabled |
 | `CLOUDFLARE_ACCESS_TEAM_URL` | HTTPS URL for the Cloudflare Access team | Empty |
 | `CLOUDFLARE_ACCESS_AUD` | Audience tag for the Cloudflare Access app | Empty |
-| `FORWARDER_TOKEN` | Required `X-Forwarder-Token` header on ingestion | Empty: unauthenticated ingestion |
+| `FORWARDER_TOKEN` | Shared secret for message `X-Signature` verification, then `X-Forwarder-Token` fallback | Empty: unauthenticated ingestion |
 | `HEARTBEAT_TOKEN` | Separate secret for the phone heartbeat URL | Empty: monitoring disabled |
 | `HEARTBEAT_TIMEOUT` | Time without a heartbeat before marking the phone inactive; Go duration, 1s–168h | `15m` |
 | `COOKIE_SECURE` | Use Secure session cookies for HTTPS | `false` |

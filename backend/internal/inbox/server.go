@@ -1,6 +1,7 @@
 package inbox
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -120,9 +121,27 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
-	if s.Config.ForwarderToken != "" && !equalSecret(r.Header.Get("X-Forwarder-Token"), s.Config.ForwarderToken) {
-		writeError(w, http.StatusUnauthorized, "Invalid forwarding token")
-		return
+	if secret := s.Config.ForwarderToken; secret != "" {
+		signed := false
+		if signature := r.Header.Get("X-Signature"); signature != "" {
+			// SMS Forwarder signs the exact UTF-8 request body, before JSON decoding.
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 128*1024))
+			if err != nil {
+				var tooLarge *http.MaxBytesError
+				if errors.As(err, &tooLarge) {
+					writeError(w, http.StatusRequestEntityTooLarge, "Payload is too large")
+				} else {
+					writeError(w, http.StatusBadRequest, "Could not read message payload")
+				}
+				return
+			}
+			signed = validForwarderSignature(signature, body, secret)
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		if !signed && !equalSecret(r.Header.Get("X-Forwarder-Token"), secret) {
+			writeError(w, http.StatusUnauthorized, "Invalid forwarding token")
+			return
+		}
 	}
 	var in Incoming
 	if err := decodeJSON(w, r, &in); err != nil {

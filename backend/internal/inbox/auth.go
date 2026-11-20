@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,6 +17,19 @@ const sessionCookie = "sms_session"
 func equalSecret(a, b string) bool {
 	x, y := sha256.Sum256([]byte(a)), sha256.Sum256([]byte(b))
 	return subtle.ConstantTimeCompare(x[:], y[:]) == 1
+}
+
+func validForwarderSignature(signature string, body []byte, secret string) bool {
+	if len(signature) != sha256.Size*2 {
+		return false
+	}
+	provided, err := hex.DecodeString(signature)
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	return hmac.Equal(provided, mac.Sum(nil))
 }
 
 func (s *Server) signature(value string) string {
