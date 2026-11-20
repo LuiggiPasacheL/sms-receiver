@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -20,6 +21,9 @@ type memoryStore struct {
 	in     Incoming
 	agent  string
 	filter Filter
+	simID  string
+	alias  string
+	simErr error
 }
 
 func (s *memoryStore) Insert(_ context.Context, in Incoming, agent string) (Message, bool, error) {
@@ -35,6 +39,18 @@ func (s *memoryStore) Conversations(_ context.Context, filter Filter) (Conversat
 	return ConversationPage{Conversations: []Conversation{}, SIMs: []string{}}, nil
 }
 func (*memoryStore) Ping(context.Context) error { return nil }
+
+func (s *memoryStore) SIMs(context.Context) ([]SIM, error) {
+	return []SIM{{ID: "SIM 1", Alias: "Personal", MessageCount: 7}}, s.simErr
+}
+func (s *memoryStore) SetSIMAlias(_ context.Context, id, alias string) error {
+	s.simID, s.alias = id, alias
+	return s.simErr
+}
+func (s *memoryStore) DeleteSIM(_ context.Context, id string) (int64, error) {
+	s.simID = id
+	return 7, s.simErr
+}
 
 func testServer(store Repository) *Server {
 	return &Server{Store: store, Events: NewEvents(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Context: context.Background()}
@@ -158,6 +174,79 @@ func TestConversationAndExactSenderFilters(t *testing.T) {
 	for _, query := range []string{"limit=0", "before=invalid", "q=" + strings.Repeat("a", 513), "from=" + strings.Repeat("a", 513)} {
 		if w = perform(h, "GET", "/api/conversations?"+query, "", nil); w.Code != 400 {
 			t.Errorf("invalid filter accepted: %s", query)
+		}
+	}
+}
+
+func TestSIMManagement(t *testing.T) {
+	store := &memoryStore{}
+	h := testServer(store).Handler()
+	w := perform(h, "GET", "/api/sims", "", nil)
+	var inventory struct {
+		SIMs []SIM `json:"sims"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &inventory); err != nil || w.Code != 200 || len(inventory.SIMs) != 1 || inventory.SIMs[0].Alias != "Personal" || inventory.SIMs[0].MessageCount != 7 {
+		t.Fatalf("SIM inventory: %d %s", w.Code, w.Body)
+	}
+	w = perform(h, "PUT", "/api/sims", `{"sim":"SIM +/1","alias":"  Personal ✓  "}`, nil)
+	if w.Code != 204 || store.simID != "SIM +/1" || store.alias != "Personal ✓" {
+		t.Fatalf("alias changed identifier or whitespace was retained: %d %s", w.Code, w.Body)
+	}
+	w = perform(h, "PUT", "/api/sims", `{"sim":"SIM +/1","alias":""}`, nil)
+	if w.Code != 204 || store.alias != "" {
+		t.Fatal("could not clear alias")
+	}
+	w = perform(h, "DELETE", "/api/sims?sim=SIM+%2B%2F1", "", nil)
+	if w.Code != 200 || store.simID != "SIM +/1" || !strings.Contains(w.Body.String(), `"deletedMessages":7`) {
+		t.Fatalf("delete must target exact SIM identifier: %d %s", w.Code, w.Body)
+	}
+	for _, body := range []string{`null`, `{}`, `{"sim":"SIM 1"}`, `{"sim":"SIM 1","alias":null}`, `{"sim":"SIM 1","alias":3}`, `{"sim":"","alias":"a"}`, `{"sim":"SIM 1","alias":"` + strings.Repeat("名", 129) + `"}`, `{"sim":"` + strings.Repeat("x", 129) + `","alias":"a"}`} {
+		if w = perform(h, "PUT", "/api/sims", body, nil); w.Code != 400 {
+			t.Errorf("invalid alias body accepted: %d %s", w.Code, body)
+		}
+	}
+	for _, path := range []string{"/api/sims", "/api/sims?sim=", "/api/sims?sim=" + strings.Repeat("a", 129)} {
+		if w = perform(h, "DELETE", path, "", nil); w.Code != 400 {
+			t.Errorf("invalid delete accepted: %d %s", w.Code, path)
+		}
+	}
+	for _, err := range []error{ErrSIMNotFound, errors.New("database unavailable")} {
+		store.simErr = err
+		status := 500
+		if errors.Is(err, ErrSIMNotFound) {
+			status = 404
+		}
+		for _, method := range []string{"PUT", "DELETE"} {
+			if w = perform(h, method, "/api/sims?sim=SIM1", `{"sim":"SIM1","alias":"Work"}`, nil); w.Code != status {
+				t.Errorf("%s failure: status=%d want=%d", method, w.Code, status)
+			}
+		}
+	}
+}
+
+func TestSIMManagementRequiresSessionAndSameOrigin(t *testing.T) {
+	s := testServer(&memoryStore{})
+	s.Config.ViewerPassword = "private-password"
+	h := s.Handler()
+	for _, method := range []string{"GET", "PUT", "DELETE"} {
+		if w := perform(h, method, "/api/sims?sim=SIM1", `{"sim":"SIM1","alias":"Work"}`, nil); w.Code != 401 {
+			t.Errorf("%s exposed without authentication: %d", method, w.Code)
+		}
+	}
+	login := perform(h, "POST", "/api/session", `{"password":"private-password"}`, nil)
+	cookie := login.Result().Cookies()[0].String()
+	for _, site := range []string{"cross-site", "same-site"} {
+		for _, method := range []string{"PUT", "DELETE"} {
+			w := perform(h, method, "/api/sims?sim=SIM1", `{"sim":"SIM1","alias":"Work"}`, map[string]string{"Cookie": cookie, "Sec-Fetch-Site": site})
+			if w.Code != 403 {
+				t.Errorf("%s %s request accepted: %d", site, method, w.Code)
+			}
+		}
+	}
+	for _, method := range []string{"GET", "PUT", "DELETE"} {
+		w := perform(h, method, "/api/sims?sim=SIM1", `{"sim":"SIM1","alias":"Work"}`, map[string]string{"Cookie": cookie, "Sec-Fetch-Site": "same-origin"})
+		if w.Code != 200 && w.Code != 204 {
+			t.Errorf("authenticated %s rejected: %d", method, w.Code)
 		}
 	}
 }

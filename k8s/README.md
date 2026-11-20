@@ -81,12 +81,40 @@ The supplied NodePort serves HTTP for LAN/VPN access. For access over the public
 
 ## Update the app
 
-Push a new immutable version tag, change `image` in `app.yaml`, then run:
+Build and push a new version tag for each release (for example `1.0.1`), change `image` in `app.yaml` to that exact tag, then run:
 
 ```sh
 sudo k3s kubectl apply -f k8s/app.yaml
 sudo k3s kubectl -n sms-receiver rollout status deployment/sms-receiver --timeout=180s
 ```
+
+The manifest uses `imagePullPolicy: Always`. Every new container resolves its image tag against the registry; layers with the same digest can still be reused locally. If you overwrite the existing tag, finish pushing it and then restart the Deployment:
+
+```sh
+sudo k3s kubectl -n sms-receiver rollout restart deployment/sms-receiver
+sudo k3s kubectl -n sms-receiver rollout status deployment/sms-receiver --timeout=180s
+```
+
+If an existing Deployment still uses `IfNotPresent`, apply the updated `k8s/app.yaml` first. Alternatively, update only the application's pull policy with this strategic merge patch (preserving its existing image and environment settings):
+
+```sh
+sudo k3s kubectl -n sms-receiver patch deployment sms-receiver --type=strategic \
+  -p '{"spec":{"template":{"spec":{"containers":[{"name":"app","imagePullPolicy":"Always"}]}}}}'
+sudo k3s kubectl -n sms-receiver rollout status deployment/sms-receiver --timeout=180s
+```
+
+Changing the pull policy changes the Pod template and starts a rollout. If it was already `Always`, the patch does not start another rollout; use `rollout restart` to start new Pods after an overwritten tag is pushed. A restart keeps the image name/tag configured in the Deployment. If you pushed a different tag, update `image` as well.
+
+Inspect the configured image/pull policy and the actual running image digest:
+
+```sh
+sudo k3s kubectl -n sms-receiver get deployment sms-receiver \
+  -o 'jsonpath={range .spec.template.spec.containers[*]}{.name}{"\t"}{.image}{"\t"}{.imagePullPolicy}{"\n"}{end}'
+sudo k3s kubectl -n sms-receiver get pods -l app.kubernetes.io/name=sms-receiver \
+  -o 'custom-columns=POD:.metadata.name,IMAGE:.spec.containers[0].image,IMAGE_ID:.status.containerStatuses[0].imageID'
+```
+
+`READY`, `UP-TO-DATE`, and `AVAILABLE` describe the Deployment's rollout/availability, not whether a registry tag now points to different image contents. The Deployment's `AGE` is its creation time and does not reset after a restart. Compare the running digest with the registry's matching platform manifest when checking image contents. If the expected digest is running but the browser still shows old assets, check again with a hard refresh or a private window.
 
 ## Diagnose a deployment
 
@@ -98,4 +126,4 @@ sudo k3s kubectl -n sms-receiver get events --sort-by=.metadata.creationTimestam
 
 For `ImagePullBackOff`, check the image name/tag, registry availability, and server architecture. For `CreateContainerConfigError`, check that the application Secret includes `DATABASE_URL`, `VIEWER_PASSWORD`, and `FORWARDER_TOKEN`. For database connection errors, check the URL, network access, role permissions, and database availability.
 
-References: [Kubernetes namespaces](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/) and [NodePort Services](https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport).
+References: [Kubernetes namespaces](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/), [NodePort Services](https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport), and [container image pull policies](https://kubernetes.io/docs/concepts/containers/images/#image-pull-policy).

@@ -194,6 +194,41 @@ svg { flex-shrink: 0; }
 .chat-metadata .metadata { margin-top: 14px; }
 .conversation-note { display: flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 7px; padding: 14px 18px; border-top: 1px solid var(--line); color: #89977d; }
 .conversation-note p { margin: 0; font-size: 10px; line-height: 1.6; }
+.icon-button.manage-sims-button { display: flex; gap: 6px; width: auto; padding: 0 8px; white-space: nowrap; font-size: 10px; }
+.sim-dialog { width: min(560px, calc(100% - 32px)); max-height: calc(100dvh - 48px); padding: 0; border: 1px solid #dfe5d8; border-radius: 14px; color: var(--ink); background: #fafbf7; box-shadow: 0 20px 80px #26372e33; overflow-y: auto; overscroll-behavior: contain; }
+.sim-dialog::backdrop { background: #172b226b; backdrop-filter: blur(3px); }
+.sim-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px; border-bottom: 1px solid var(--line); background: #fff; }
+.sim-dialog-header h2 { margin: 0; font-size: 22px; font-weight: 500; letter-spacing: -.5px; }
+.sim-dialog-header p { margin: 9px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.sim-dialog-header .icon-button { flex-shrink: 0; }
+.sim-cards { padding: 20px 24px 24px; display: grid; gap: 16px; }
+.sim-card { min-width: 0; padding: 18px; border: 1px solid var(--line); background: #fff; border-radius: 9px; }
+.sim-card-heading { display: flex; align-items: center; gap: 10px; color: #75876a; }
+.sim-card-heading > div { min-width: 0; }
+.sim-card h3 { margin: 0; color: var(--ink); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.sim-card-heading p { margin: 5px 0 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.sim-alias-form { margin-top: 18px; }
+.sim-alias-form label { display: block; margin-bottom: 7px; font-size: 11px; color: #6d7e61; }
+.sim-alias-form > div { display: flex; gap: 8px; }
+.sim-alias-form input { flex: 1; width: 0; padding: 10px; border: 1px solid #dfe6d7; border-radius: 5px; background: #fcfdf9; font-size: 13px; color: var(--ink); }
+.sim-save { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid #d9e3d2; border-radius: 5px; padding: 9px 12px; background: #eff5e9; color: #4c6b3d; font-size: 12px; white-space: nowrap; }
+.sim-save:hover { background: #e6efdd; }
+.sim-card-bottom { margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sim-card-bottom > span { max-width: 250px; font-size: 10px; color: #929c88; line-height: 1.6; }
+.sim-delete { flex-shrink: 0; display: flex; align-items: center; gap: 5px; border: 0; padding: 8px 0 8px 8px; background: transparent; color: #a65c4c; font-size: 11px; }
+.sim-delete:hover { color: #8d3827; }
+.sim-error { color: #944d3c; background: #fcf0eb; padding: 12px 24px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.sim-delete-confirm { padding: 28px 24px; }
+.sim-delete-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 14px; background: #f8e9e3; color: #a65c4c; }
+.sim-delete-confirm h3 { font-size: 20px; font-weight: 500; margin: 20px 0 14px; overflow-wrap: anywhere; }
+.sim-delete-confirm p { font-size: 13px; line-height: 1.8; color: #7d857d; overflow-wrap: anywhere; }
+.sim-delete-confirm strong { color: #5e675b; font-weight: 600; }
+.sim-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 26px; }
+.sim-delete-confirm-button { border: 0; border-radius: 5px; padding: 11px 14px; background: #a45240; color: #fff; font-size: 12px; }
+.sim-delete-confirm-button:hover { background: #8d4232; }
+.sim-empty { padding: 32px 16px; text-align: center; color: #8b9c7b; }
+.sim-empty h3 { color: var(--ink); font-size: 16px; font-weight: 500; }
+.sim-empty p { color: var(--muted); font-size: 12px; line-height: 1.8; }
 @media (min-width: 1600px) { .workspace { padding: 0 65px; } .inbox-columns { grid-template-columns: 390px 1fr; } .message-detail { padding: 32px 54px; } }
 @media (max-width: 1180px) { .workspace { padding: 0 28px; } .sidebar { width: 200px; flex-basis: 200px; padding-left: 15px; padding-right: 15px; } .message-detail { padding: 25px; } .inbox-columns { grid-template-columns: minmax(260px, 42%) minmax(0, 1fr); } .metadata > div { grid-template-columns: 100px 1fr; } }
 @media (max-width: 960px) { .sidebar { width: 76px; flex-basis: 76px; padding: 25px 12px; } .sidebar .brand > span:last-child, .workspace-label, .sidebar-section, .quiet-card, .readonly, .sidebar-footer, .nav-item > span, .sign-out { display: none; } .sidebar > .brand { margin-left: 7px; } .sidebar nav { margin-top: 40px; } .nav-item { justify-content: center; padding: 15px; } .brand-mark { width: 36px; height: 36px; } .heading-note { display: none; } .inbox-columns { grid-template-columns: minmax(250px, 42%) minmax(0, 1fr); } .page-heading { padding-top: 30px; } .message-detail { padding: 22px; } }
@@ -230,6 +265,17 @@ svg { flex-shrink: 0; }
   .sim-select select { font-size: 16px; width: 100%; min-width: 0; max-width: none; height: 100%; padding-right: 14px; text-overflow: ellipsis; }
   .sim-select > svg:last-child { right: 10px; }
   .icon-button { width: 44px; height: 44px; flex: 0 0 44px; }
+  .icon-button.manage-sims-button { width: 44px; flex-basis: 44px; padding: 0; justify-content: center; }
+  .manage-sims-button > span { display: none; }
+  .sim-dialog { width: calc(100% - 24px); max-height: calc(100dvh - 32px); }
+  .sim-dialog-header, .sim-delete-confirm { padding: 20px; }
+  .sim-cards { padding: 16px; }
+  .sim-card { padding: 16px; }
+  .sim-alias-form input { font-size: 16px; min-height: 44px; }
+  .sim-save, .sim-delete, .sim-delete-confirm-button { min-height: 44px; }
+  .sim-card-bottom { align-items: flex-start; }
+  .sim-card-bottom > span { font-size: 11px; }
+  .sim-confirm-actions > button { flex: 1; }
   .inbox-columns { display: block; flex: 1; height: auto; min-height: 0; max-height: none; overflow: hidden; }
   .message-list-pane { height: 100%; border-right: 0; }
   .search-wrap { margin: 12px 12px 14px; padding: 0 12px; min-height: 48px; flex-shrink: 0; }

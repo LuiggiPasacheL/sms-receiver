@@ -107,6 +107,12 @@ type Filter struct {
 	Limit  int
 }
 
+type SIM struct {
+	ID           string `json:"id"`
+	Alias        string `json:"alias"`
+	MessageCount int64  `json:"messageCount"`
+}
+
 type Conversation struct {
 	LatestMessage Message `json:"latestMessage"`
 	MessageCount  int64   `json:"messageCount"`

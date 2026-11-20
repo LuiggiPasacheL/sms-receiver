@@ -16,9 +16,9 @@ CREATE INDEX IF NOT EXISTS messages_created_at_idx ON messages (created_at);
 CREATE OR REPLACE FUNCTION notify_sms_message() RETURNS trigger AS $$
 BEGIN
     PERFORM pg_notify('sms_messages', '');
-    RETURN NEW;
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE TRIGGER messages_notify
-AFTER INSERT ON messages FOR EACH ROW EXECUTE FUNCTION notify_sms_message();
+AFTER INSERT OR DELETE ON messages FOR EACH STATEMENT EXECUTE FUNCTION notify_sms_message();

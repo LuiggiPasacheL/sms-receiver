@@ -14,10 +14,18 @@ import (
 //go:embed migrations/001_messages.sql
 var schema string
 
+//go:embed migrations/002_sim_aliases.sql
+var simSchema string
+
+var ErrSIMNotFound = errors.New("SIM not found")
+
 type Repository interface {
 	Insert(context.Context, Incoming, string) (Message, bool, error)
 	List(context.Context, Filter) (Page, error)
 	Conversations(context.Context, Filter) (ConversationPage, error)
+	SIMs(context.Context) ([]SIM, error)
+	SetSIMAlias(context.Context, string, string) error
+	DeleteSIM(context.Context, string) (int64, error)
 	Ping(context.Context) error
 }
 
@@ -33,6 +41,9 @@ func (s Store) Migrate(ctx context.Context) error {
 		return err
 	}
 	if _, err = tx.Exec(ctx, schema); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, simSchema); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -155,6 +166,64 @@ func (s Store) knownSIMs(ctx context.Context) ([]string, error) {
 		values = append(values, sim)
 	}
 	return values, sims.Err()
+}
+
+func (s Store) SIMs(ctx context.Context) ([]SIM, error) {
+	values := []SIM{}
+	rows, err := s.Pool.Query(ctx, `WITH counts AS (
+		SELECT sim, count(*) AS message_count FROM messages WHERE sim <> '' GROUP BY sim
+	) SELECT coalesce(counts.sim, sim_aliases.sim), coalesce(sim_aliases.alias, ''), coalesce(counts.message_count, 0)
+		FROM counts FULL JOIN sim_aliases ON counts.sim = sim_aliases.sim
+		ORDER BY coalesce(counts.sim, sim_aliases.sim)`)
+	if err != nil {
+		return values, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sim SIM
+		if err := rows.Scan(&sim.ID, &sim.Alias, &sim.MessageCount); err != nil {
+			return values, err
+		}
+		values = append(values, sim)
+	}
+	return values, rows.Err()
+}
+
+func (s Store) SetSIMAlias(ctx context.Context, id, alias string) error {
+	result, err := s.Pool.Exec(ctx, `INSERT INTO sim_aliases (sim, alias)
+		SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM messages WHERE sim = $1)
+			OR EXISTS (SELECT 1 FROM sim_aliases WHERE sim = $1)
+		ON CONFLICT (sim) DO UPDATE SET alias = EXCLUDED.alias`, id, alias)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrSIMNotFound
+	}
+	return nil
+}
+
+func (s Store) DeleteSIM(ctx context.Context, id string) (int64, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	result, err := tx.Exec(ctx, "DELETE FROM messages WHERE sim = $1", id)
+	if err != nil {
+		return 0, err
+	}
+	alias, err := tx.Exec(ctx, "DELETE FROM sim_aliases WHERE sim = $1", id)
+	if err != nil {
+		return 0, err
+	}
+	if result.RowsAffected() == 0 && alias.RowsAffected() == 0 {
+		return 0, ErrSIMNotFound
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 func (s Store) Ping(ctx context.Context) error { return s.Pool.Ping(ctx) }

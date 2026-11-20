@@ -1,6 +1,6 @@
 # Relay — live SMS inbox
 
-A read-only SMS inbox built with **Go**, **React / Next.js (App Router)**, and **PostgreSQL**. SMS Forwarder posts to `/messages`; messages appear in the browser automatically through **Server-Sent Events (SSE)**. There is no reply, send, edit, or delete endpoint.
+A read-only SMS inbox built with **Go**, **React / Next.js (App Router)**, and **PostgreSQL**. SMS Forwarder posts to `/messages`; messages appear in the browser automatically through **Server-Sent Events (SSE)**. Messages cannot be sent, replied to, or edited. The SIM manager can assign aliases and permanently delete a SIM together with all its messages.
 
 For k3s deployment in a dedicated `sms-receiver` namespace on server port **30080**, see [the Kubernetes deployment guide](k8s/README.md).
 
@@ -66,9 +66,17 @@ curl -i http://localhost:8080/messages \
   --data '{"from":"Test phone","text":"Hello from SMS Forwarder!","sentStamp":1794528000000,"receivedStamp":1794528001000,"sim":"SIM 1"}'
 ```
 
+## Manage SIMs
+
+Open **Manage SIMs** beside the SIM filter. Assign a display alias such as “Personal” or “Work”; leave it empty to restore the original identifier. Aliases are stored in PostgreSQL and appear in filters and message bubbles. The forwarder continues to send its original SIM value, and filtering and deletion always use that exact identifier. Aliases may contain up to 128 characters, and surrounding whitespace is trimmed.
+
+**Delete SIM** opens a confirmation showing the SIM identifier and message count. Confirming permanently deletes every message for that SIM across all conversations and removes its alias in one transaction. Messages from other SIMs remain intact, including those in shared conversations. This does not block future forwarding: a new message with the same SIM identifier makes it appear again without an alias. Messages without a SIM identifier do not appear in the SIM manager.
+
+SIM management uses the same viewer session as the inbox; with no `VIEWER_PASSWORD`, anyone who can access the app can manage SIMs. Changes propagate to other open inboxes through SSE, and a deleted SIM filter resets to All SIMs.
+
 ## Live updates
 
-`GET /api/events` maintains an authenticated SSE connection. PostgreSQL's insert trigger emits `NOTIFY`, and each API instance uses `LISTEN` on a dedicated connection to broadcast an invalidation to its connected browsers. The browser then reloads its current message window and filter counts. There is no browser polling loop.
+`GET /api/events` maintains an authenticated SSE connection. PostgreSQL triggers emit `NOTIFY` for message inserts/deletions and SIM alias changes, and each API instance uses `LISTEN` on a dedicated connection to broadcast an invalidation to its connected browsers. The browser then reloads its current message window and filter counts. There is no browser polling loop.
 
 Every SSE connection begins with a `ready` event and a fresh inbox fetch. If a browser or database listener reconnects, clients refresh again to recover missed changes. Heartbeat comments are sent every 20 seconds, writes have deadlines, and notifications are coalesced for slow clients. The server cancels streams on shutdown.
 
@@ -136,6 +144,9 @@ Compose requires all three secrets. The frontend assets are public; all inbox da
 | `POST /messages` | SMS Forwarder webhook; optional token authentication |
 | `GET /api/conversations?q=&sim=&limit=50&before=` | Authenticated conversations, newest activity first; includes `conversations` (`latestMessage`, `messageCount`), `nextCursor`, conversation `total`, `messageTotal`, `today`, and known `sims` |
 | `GET /api/messages?q=&sim=&from=&limit=50&before=` | Authenticated message history; `from` filters by exact sender; newest first, `limit` 1–100; response includes `messages`, `nextCursor`, filtered `total`/`today`, and all known `sims` |
+| `GET /api/sims` | SIM inventory: `sims` entries contain original `id`, display `alias`, and `messageCount` |
+| `PUT /api/sims` | Set/clear alias with `{"sim":"SIM 1","alias":"Personal"}`; `204` on success, `404` for an unknown SIM |
+| `DELETE /api/sims?sim=` | Permanently remove the exact SIM and all its messages; returns `deletedMessages`, or `404` if unknown |
 | `GET /api/events` | Authenticated SSE; `ready` and `messages` events |
 | `GET /api/session` | Session status |
 | `POST /api/session` | Sign in with `{"password":"..."}` |

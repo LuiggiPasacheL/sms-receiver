@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type Config struct {
@@ -38,6 +39,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/session", s.logout)
 	mux.HandleFunc("GET /api/messages", s.requireViewer(s.list))
 	mux.HandleFunc("GET /api/conversations", s.requireViewer(s.list))
+	mux.HandleFunc("GET /api/sims", s.requireViewer(s.listSIMs))
+	mux.HandleFunc("PUT /api/sims", s.requireViewer(s.setSIMAlias))
+	mux.HandleFunc("DELETE /api/sims", s.requireViewer(s.deleteSIM))
 	mux.HandleFunc("GET /api/events", s.requireViewer(s.stream))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeError(w, 404, "Not found") })
 	if s.Config.StaticDir != "" {
@@ -72,9 +76,10 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
-		if r.Method == http.MethodPost || r.Method == http.MethodDelete {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
 			// Browser session mutations are same-origin only. Webhooks are exempt.
-			if r.URL.Path != "/messages" && r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+			site := r.Header.Get("Sec-Fetch-Site")
+			if r.URL.Path != "/messages" && site != "" && site != "same-origin" && site != "none" {
 				writeError(w, http.StatusForbidden, "Cross-site request rejected")
 				return
 			}
@@ -180,6 +185,70 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) listSIMs(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	sims, err := s.Store.SIMs(ctx)
+	if err != nil {
+		s.Logger.Error("list SIMs failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load SIMs")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sims": sims})
+}
+
+func (s *Server) setSIMAlias(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		SIM   string  `json:"sim"`
+		Alias *string `json:"alias"`
+	}
+	if err := decodeJSON(w, r, &in); err != nil || in.Alias == nil {
+		writeError(w, http.StatusBadRequest, "Expected a JSON object with sim and alias strings")
+		return
+	}
+	if in.SIM == "" || len(in.SIM) > 128 {
+		writeError(w, http.StatusBadRequest, "sim must be between 1 and 128 bytes")
+		return
+	}
+	alias := strings.TrimSpace(*in.Alias)
+	if utf8.RuneCountInString(alias) > 128 {
+		writeError(w, http.StatusBadRequest, "alias must be at most 128 characters")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	if err := s.Store.SetSIMAlias(ctx, in.SIM, alias); err != nil {
+		s.simMutationError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) deleteSIM(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("sim")
+	if id == "" || len(id) > 128 {
+		writeError(w, http.StatusBadRequest, "sim must be between 1 and 128 bytes")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	count, err := s.Store.DeleteSIM(ctx, id)
+	if err != nil {
+		s.simMutationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"deletedMessages": count})
+}
+
+func (s *Server) simMutationError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrSIMNotFound) {
+		writeError(w, http.StatusNotFound, "SIM not found")
+		return
+	}
+	s.Logger.Error("SIM update failed", "error", err)
+	writeError(w, http.StatusInternalServerError, "Could not update SIM")
 }
 
 func (s *Server) stream(w http.ResponseWriter, r *http.Request) {

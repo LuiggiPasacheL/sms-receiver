@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDown, ArrowLeft, ArrowUpRight, Check, CheckCheck, ChevronDown, Copy, Inbox, LockKeyhole, LogOut, MessageSquare, Radio, RefreshCw, Search, ShieldCheck, Signal, Smartphone, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUpRight, Check, CheckCheck, ChevronDown, Copy, Inbox, LockKeyhole, LogOut, MessageSquare, Radio, RefreshCw, Search, ShieldCheck, Signal, Smartphone, Settings2, X } from "lucide-react";
+
+import { APIError, request } from "./api";
+import { SIMManager, simLabel, type SIM } from "./sim-manager";
 
 type Message = {
   id: string;
@@ -17,20 +20,6 @@ type ConversationPage = { conversations: Conversation[]; nextCursor?: string; to
 type Page = { messages: Message[]; nextCursor?: string; total: number; today: number; sims: string[] };
 type Session = { authenticated: boolean; passwordRequired: boolean };
 type Connection = "connecting" | "live" | "reconnecting";
-
-class APIError extends Error {
-  constructor(message: string, readonly status: number) { super(message); }
-}
-
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...options, credentials: "same-origin", cache: "no-store" });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new APIError(body.error || "Unable to reach the inbox. Please try again.", response.status);
-  }
-  if (response.status === 204) return undefined as T;
-  return response.json();
-}
 
 const number = (n: number) => new Intl.NumberFormat().format(n);
 function dateLabel(value: string, full = false) {
@@ -59,8 +48,8 @@ function Brand() {
   return <div className="brand"><span className="brand-mark"><MessageSquare size={22} strokeWidth={1.7} /></span><span>relay<span className="brand-dot">.</span></span></div>;
 }
 
-function ConversationView({ sender, sim, revision, isOpen, onBack, onUnauthorized }: {
-  sender: string; sim: string; revision: number; isOpen: boolean; onBack: () => void; onUnauthorized: () => void;
+function ConversationView({ sender, sim, sims, revision, isOpen, onBack, onUnauthorized }: {
+  sender: string; sim: string; sims: SIM[]; revision: number; isOpen: boolean; onBack: () => void; onUnauthorized: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [pageCount, setPageCount] = useState(1);
@@ -142,7 +131,7 @@ function ConversationView({ sender, sim, revision, isOpen, onBack, onUnauthorize
   return <>
     <header className="conversation-header">
       <div className="detail-topline"><button className="back-button" onClick={onBack}><ArrowLeft size={16} /> Inbox</button><span className="eyebrow">CONVERSATION</span><span className="received-chip"><LockKeyhole size={11} /> Read-only</span></div>
-      <div className="conversation-identity"><span className={`avatar avatar-${sender.charCodeAt(0) % 4}`}>{initials(sender)}</span><div><h2 tabIndex={-1}>{sender}</h2><p>{loading && total === 0 ? "Loading messages…" : `${number(total)} ${total === 1 ? "message" : "messages"}`}{sim && ` · ${sim}`}</p></div></div>
+      <div className="conversation-identity"><span className={`avatar avatar-${sender.charCodeAt(0) % 4}`}>{initials(sender)}</span><div><h2 tabIndex={-1}>{sender}</h2><p>{loading && total === 0 ? "Loading messages…" : `${number(total)} ${total === 1 ? "message" : "messages"}`}{sim && ` · ${simLabel(sim, sims)}`}</p></div></div>
     </header>
     {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setRetry((r) => r + 1)}>Retry</button></div>}
     <div className="conversation-messages" ref={scroll} aria-busy={loading} aria-label={`Messages from ${sender}`}>
@@ -155,7 +144,7 @@ function ConversationView({ sender, sim, revision, isOpen, onBack, onUnauthorize
           {day !== previousDay && <div className="chat-date"><span>{day}</span></div>}
           <div className="chat-bubble">
             <p className="message-body" dir="auto">{message.text}</p>
-            <div className="chat-bubble-footer"><span className="sim-badge"><Smartphone size={10} />{message.sim || "Unspecified SIM"}</span><time dateTime={message.createdAt} title={dateLabel(message.createdAt, true)}>{new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><button className="copy-button" onClick={() => copyMessage(message)} aria-label={`Copy message ${message.id}`}>{copied === message.id ? <Check size={14} /> : <Copy size={14} />}{copied === message.id ? "Copied" : "Copy"}</button></div>
+            <div className="chat-bubble-footer"><span className="sim-badge" title={message.sim}><Smartphone size={10} />{simLabel(message.sim, sims)}</span><time dateTime={message.createdAt} title={dateLabel(message.createdAt, true)}>{new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><button className="copy-button" onClick={() => copyMessage(message)} aria-label={`Copy message ${message.id}`}>{copied === message.id ? <Check size={14} /> : <Copy size={14} />}{copied === message.id ? "Copied" : "Copy"}</button></div>
             <details className="chat-metadata"><summary>Message details</summary><dl className="metadata"><div><dt>Sent at</dt><dd>{stampLabel(message.sentStamp)}</dd></div><div><dt>Received on phone</dt><dd>{stampLabel(message.receivedStamp)}</dd></div><div><dt>Forwarded to inbox</dt><dd>{dateLabel(message.createdAt, true)}</dd></div><div><dt>Message ID</dt><dd>#{message.id}</dd></div></dl></details>
           </div>
         </div>;
@@ -173,6 +162,8 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [term, setTerm] = useState("");
   const [sim, setSim] = useState("");
+  const [sims, setSIMs] = useState<SIM[]>([]);
+  const [managingSIMs, setManagingSIMs] = useState(false);
   const [pageCount, setPageCount] = useState(1);
   const [revision, setRevision] = useState(0);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -247,7 +238,7 @@ export default function Home() {
         setConversations(all);
         setHasNext(Boolean(cursor));
         setStats({ total: result.messageTotal, conversations: result.total, today: result.today, sims: result.sims });
-        setSelected((current) => current || all[0]?.latestMessage.from || null);
+        setSelected((current) => current && (cursor || all.some((c) => c.latestMessage.from === current)) ? current : all[0]?.latestMessage.from || null);
         setLastSync(new Date());
       } catch (e) {
         if (controller.signal.aborted) return;
@@ -291,6 +282,37 @@ export default function Home() {
 
   const sessionExpired = useCallback(() => setSession({ authenticated: false, passwordRequired: true }), []);
 
+  const loadSIMs = useCallback(async (signal?: AbortSignal) => {
+    const result = await request<{ sims: SIM[] }>("/api/sims", { signal });
+    if (signal?.aborted) return;
+    setSIMs(result.sims);
+    setSim((current) => current && !result.sims.some((value) => value.id === current) ? "" : current);
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    const controller = new AbortController();
+    loadSIMs(controller.signal).catch((e: unknown) => {
+      if (controller.signal.aborted) return;
+      if (e instanceof APIError && e.status === 401) sessionExpired();
+      else setError(e instanceof Error ? e.message : "Could not load SIMs");
+    });
+    return () => controller.abort();
+  }, [authenticated, revision, loadSIMs, sessionExpired]);
+
+  async function simsChanged(deletedID?: string) {
+    // Refresh the inbox even if the metadata request fails after a mutation.
+    setRevision((r) => r + 1);
+    if (deletedID !== undefined) {
+      setSIMs((current) => current.filter((value) => value.id !== deletedID));
+      setSim((current) => current === deletedID ? "" : current);
+      setPageCount(1);
+      setSelected(null);
+      setMobileDetail(false);
+    }
+    await loadSIMs();
+  }
+
   async function login(event: FormEvent) {
     event.preventDefault();
     setSigningIn(true);
@@ -310,6 +332,8 @@ export default function Home() {
       setSelected(null);
       setStats({ total: 0, conversations: 0, today: 0, sims: [] });
       setLastSync(null);
+      setSIMs([]);
+      setManagingSIMs(false);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not sign out"); }
   }
   if (!session || !session.authenticated) return (
@@ -327,7 +351,7 @@ export default function Home() {
             {sessionError && <p className="form-error" role="alert">{sessionError}</p>}
             <button className="primary-button" disabled={signingIn}>{signingIn ? "Signing in…" : "Open inbox"}<ArrowUpRight size={17} /></button>
           </form>}
-        <div className="auth-foot"><ShieldCheck size={14} /> Private access · Read-only inbox</div>
+        <div className="auth-foot"><ShieldCheck size={14} /> Private access · Incoming SMS</div>
       </section>
       <span className="auth-bottom">LESS NOISE. MORE SIGNAL.</span>
     </main>
@@ -342,7 +366,7 @@ export default function Home() {
         <div className="sidebar-section"><span className="eyebrow">AT A GLANCE</span><div className="stat-row"><span>Messages in view</span><strong>{number(stats.total)}</strong></div><div className="stat-row"><span>Received today <small>UTC</small></span><strong>{number(stats.today)}</strong></div><div className="stat-row"><span>Connected SIMs</span><strong>{stats.sims.length.toString().padStart(2, "0")}</strong></div></div>
         <div className="sidebar-bottom">
           <div className="quiet-card"><div className="quiet-icon"><Radio size={20} strokeWidth={1.4} /></div><h3>Your phone, in sync.</h3><p>Incoming messages appear here automatically.</p><span><span className={`status-dot ${connection === "live" ? "" : "offline"}`} /> {connection === "live" ? "Listening for messages" : "Waiting for connection"}</span></div>
-          <div className="readonly"><ShieldCheck size={15} /><span>Read-only by design</span></div>
+          <div className="readonly"><ShieldCheck size={15} /><span>Incoming messages only</span></div>
           {session.passwordRequired && <button className="sign-out" onClick={logout}><LogOut size={14} /> Sign out</button>}
           <div className="sidebar-footer"><span>RELAY / SMS INBOX</span><span>V.01</span></div>
         </div>
@@ -353,7 +377,7 @@ export default function Home() {
         <div className="page-heading"><div><div className="eyebrow heading-eyebrow">YOUR MESSAGES, TOGETHER</div><h1>Inbox<span className="heading-dot">.</span></h1><p>A little less checking your phone.</p></div><div className="heading-note"><Signal size={18} /><div><strong>Always in the loop</strong><span>New messages arrive in real time</span></div></div></div>
 
         <section className="inbox-panel" aria-label="SMS messages">
-          <div className="inbox-toolbar"><div className="inbox-title"><Inbox size={17} /><strong>Conversations</strong><span className="count-badge">{number(stats.conversations)}</span></div><div className="toolbar-controls"><label className="sim-select"><Smartphone size={14} /><select aria-label="Filter by SIM" value={sim} onChange={(e) => { setSim(e.target.value); setPageCount(1); }}><option value="">All SIMs</option>{stats.sims.map((value) => <option key={value} value={value}>{value}</option>)}</select><ChevronDown size={13} /></label><button className={`icon-button ${loading ? "is-loading" : ""}`} aria-label="Refresh inbox" onClick={() => setRevision((r) => r + 1)} disabled={loading}><RefreshCw size={15} className={loading ? "spin" : ""} /></button></div></div>
+          <div className="inbox-toolbar"><div className="inbox-title"><Inbox size={17} /><strong>Conversations</strong><span className="count-badge">{number(stats.conversations)}</span></div><div className="toolbar-controls"><label className="sim-select"><Smartphone size={14} /><select aria-label="Filter by SIM" value={sim} onChange={(e) => { setSim(e.target.value); setPageCount(1); }}><option value="">All SIMs</option>{sims.map((value) => <option key={value.id} value={value.id}>{value.alias ? `${value.alias} (${value.id})` : value.id}</option>)}</select><ChevronDown size={13} /></label><button className="icon-button manage-sims-button" aria-label="Manage SIMs" onClick={() => setManagingSIMs(true)}><Settings2 size={15} /><span>Manage SIMs</span></button><button className={`icon-button ${loading ? "is-loading" : ""}`} aria-label="Refresh inbox" onClick={() => setRevision((r) => r + 1)} disabled={loading}><RefreshCw size={15} className={loading ? "spin" : ""} /></button></div></div>
           {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setRevision((r) => r + 1)}>Retry</button></div>}
           <div className={`inbox-columns ${mobileDetail ? "detail-open" : ""}`}>
             <div className="message-list-pane">
@@ -368,12 +392,13 @@ export default function Home() {
             </div>
 
             <article className={`message-detail ${selected ? "conversation-detail" : ""}`} aria-label="Conversation" ref={messageDetail}>
-              {selected ? <ConversationView key={`${selected}\0${sim}`} sender={selected} sim={sim} revision={revision} isOpen={mobileDetail} onBack={() => setMobileDetail(false)} onUnauthorized={sessionExpired} /> : <div className="detail-placeholder"><div className="placeholder-art"><span className="art-orbit orbit-one" /><span className="art-orbit orbit-two" /><MessageSquare size={37} strokeWidth={1} /><span className="art-spark">+</span></div><span className="eyebrow">A LITTLE SIGNAL. A LITTLE SIMPLER.</span><h2>{term || sim ? "Room for the right message." : "Your messages have a home."}</h2><p>{term || sim ? "Choose another filter to find what you’re looking for." : "Connect SMS Forwarder to your inbox. Every incoming message will find its way here."}</p><div className="placeholder-status"><span className={`status-dot ${connection === "live" ? "" : "offline"}`} />{connection === "live" ? "Ready when your phone is" : "Connecting to your inbox"}</div></div>}
+              {selected ? <ConversationView key={`${selected}\0${sim}`} sender={selected} sim={sim} sims={sims} revision={revision} isOpen={mobileDetail} onBack={() => setMobileDetail(false)} onUnauthorized={sessionExpired} /> : <div className="detail-placeholder"><div className="placeholder-art"><span className="art-orbit orbit-one" /><span className="art-orbit orbit-two" /><MessageSquare size={37} strokeWidth={1} /><span className="art-spark">+</span></div><span className="eyebrow">A LITTLE SIGNAL. A LITTLE SIMPLER.</span><h2>{term || sim ? "Room for the right message." : "Your messages have a home."}</h2><p>{term || sim ? "Choose another filter to find what you’re looking for." : "Connect SMS Forwarder to your inbox. Every incoming message will find its way here."}</p><div className="placeholder-status"><span className={`status-dot ${connection === "live" ? "" : "offline"}`} />{connection === "live" ? "Ready when your phone is" : "Connecting to your inbox"}</div></div>}
             </article>
           </div>
         </section>
         <footer className="workspace-footer"><span><ShieldCheck size={12} /> Your messages. Just for you.</span><span aria-live="polite">{lastSync ? `Last synced ${lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for first sync"}<span className="footer-dot">·</span>Auto-updating</span></footer>
       </main>
+      {managingSIMs && <SIMManager sims={sims} onClose={() => setManagingSIMs(false)} onChanged={simsChanged} onUnauthorized={sessionExpired} />}
     </div>
   );
 }

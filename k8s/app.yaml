@@ -25,7 +25,8 @@ spec:
         - name: app
           # Replace the username/tag with the public image you pushed.
           image: docker.io/luiggip/sms-receiver:1.0.0
-          imagePullPolicy: IfNotPresent
+          # Resolve the tag from the registry whenever a new container starts.
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

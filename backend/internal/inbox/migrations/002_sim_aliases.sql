@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS sim_aliases (
+    sim TEXT PRIMARY KEY CHECK (sim <> ''),
+    alias TEXT NOT NULL DEFAULT ''
+);
+
+CREATE OR REPLACE TRIGGER sim_aliases_notify
+AFTER INSERT OR UPDATE OR DELETE ON sim_aliases
+FOR EACH STATEMENT EXECUTE FUNCTION notify_sms_message();
