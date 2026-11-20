@@ -6,6 +6,22 @@ For k3s deployment in a dedicated `sms-receiver` namespace on server port **3008
 
 Messages are grouped by sender phone number (or sender name) into read-only conversations, with the latest preview and message count in the inbox. Opening a conversation shows incoming message bubbles in chronological order, date separators, and older history on demand. The interface includes substring search across senders and message bodies, SIM filtering, cursor pagination, per-message details and copy-to-clipboard, mobile layouts, a live connection indicator, and optional password access. Search finds conversations containing matching messages and opens their full history; the SIM filter applies to both the list and history. Sender values are grouped exactly as forwarded, across SIMs unless a SIM filter is selected. No message data is stored in browser local storage.
 
+## Android app — SMS Forwarder
+
+The Android sender used with Relay is **SMS Forwarder / Incoming SMS to URL forwarder**, an open-source project maintained by **bogkonstantin**. It runs on the phone that receives SMS and forwards them to this server as JSON over HTTP POST.
+
+- [Android project and source code](https://github.com/bogkonstantin/android_income_sms_gateway_webhook)
+- [Download the APK from the project's releases](https://github.com/bogkonstantin/android_income_sms_gateway_webhook/releases)
+- [Version 2.4.0 with HMAC signing and heartbeat support](https://github.com/bogkonstantin/android_income_sms_gateway_webhook/releases/tag/v2.4.0)
+
+To connect it to Relay:
+
+1. Install the app on the receiving phone, grant the requested SMS permissions, and allow background operation as described in the Android project's README.
+2. Create a forwarding rule using `*` to forward all senders, or a specific sender to forward only that sender's SMS.
+3. Set the destination to `http://YOUR_SERVER_IP:8080/messages` on your LAN, or your inbox's HTTPS address. Replace the port with your published port when using Kubernetes or a custom Docker mapping; no domain is required for LAN access.
+4. Follow [Configure SMS Forwarder](#configure-sms-forwarder) to set the JSON payload and authenticate using HMAC signing or the legacy token header. Use the rule's **Test** button to verify delivery.
+5. Optionally enable [phone heartbeat monitoring](#phone-heartbeat-monitoring) to see the phone's activity in the web inbox.
+
 ## Run with Docker
 
 ```sh
